@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Hospital Receptionist</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #2d3748; }
+
+  header {
+    background: linear-gradient(135deg, #1a56db, #0d9488);
+    color: white; padding: 18px 32px;
+    display: flex; align-items: center; gap: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  header h1 { font-size: 1.4rem; font-weight: 600; }
+  header span { font-size: 0.85rem; opacity: 0.85; }
+
+  .layout { display: grid; grid-template-columns: 380px 1fr; gap: 20px; padding: 24px; max-width: 1400px; margin: auto; }
+
+  /* ── Call Panel ── */
+  .call-panel {
+    background: white; border-radius: 14px; padding: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .call-panel h2 { font-size: 1rem; font-weight: 600; color: #374151; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 16px; border-radius: 999px; font-size: 0.85rem; font-weight: 500;
+  }
+  .status-idle    { background: #f3f4f6; color: #6b7280; }
+  .status-active  { background: #d1fae5; color: #065f46; }
+  .status-ended   { background: #fee2e2; color: #991b1b; }
+  .status-loading { background: #fef3c7; color: #92400e; }
+
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+  .dot.pulse { animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .btn {
+    width: 100%; padding: 13px; border: none; border-radius: 10px;
+    font-size: 1rem; font-weight: 600; cursor: pointer; transition: all .2s;
+  }
+  .btn-start { background: #10b981; color: white; }
+  .btn-start:hover { background: #059669; }
+  .btn-end   { background: #ef4444; color: white; }
+  .btn-end:hover { background: #dc2626; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Visualiser */
+  #visualiser { width: 100%; height: 60px; border-radius: 8px; background: #f9fafb; }
+
+  /* Transcript */
+  .transcript-box {
+    background: #f9fafb; border-radius: 10px; padding: 14px;
+    height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+    font-size: 0.875rem;
+  }
+  .msg { display: flex; flex-direction: column; gap: 3px; }
+  .msg .label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .msg .bubble { padding: 9px 13px; border-radius: 10px; line-height: 1.5; max-width: 90%; }
+  .msg.user .label { color: #1a56db; }
+  .msg.user .bubble { background: #dbeafe; color: #1e3a8a; align-self: flex-end; border-bottom-right-radius: 2px; }
+  .msg.agent .label { color: #0d9488; }
+  .msg.agent .bubble { background: #d1fae5; color: #064e3b; align-self: flex-start; border-bottom-left-radius: 2px; }
+  .msg.system .bubble { background: #f3f4f6; color: #6b7280; font-style: italic; align-self: center; font-size: 0.78rem; }
+
+  /* ── Dashboard ── */
+  .dashboard { display: flex; flex-direction: column; gap: 20px; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .stat-card {
+    background: white; border-radius: 12px; padding: 18px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .stat-card .val { font-size: 2rem; font-weight: 700; color: #1a56db; }
+  .stat-card .lbl { font-size: 0.78rem; color: #6b7280; margin-top: 4px; }
+
+  .table-card {
+    background: white; border-radius: 14px; padding: 20px 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .table-card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 14px; color: #374151; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  thead tr { border-bottom: 2px solid #e5e7eb; }
+  th { text-align: left; padding: 8px 12px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em; color: #9ca3af; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9fafb; }
+
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 0.72rem; font-weight: 600;
+  }
+  .badge-confirmed { background: #d1fae5; color: #065f46; }
+  .badge-cancelled { background: #fee2e2; color: #991b1b; }
+  .badge-completed { background: #dbeafe; color: #1e3a8a; }
+
+  .btn-cancel-row {
+    background: none; border: 1px solid #fca5a5; color: #ef4444;
+    padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;
+  }
+  .btn-cancel-row:hover { background: #fee2e2; }
+
+  .refresh-btn {
+    float: right; background: none; border: 1px solid #d1d5db; color: #374151;
+    padding: 5px 14px; border-radius: 8px; font-size: 0.8rem; cursor: pointer;
+  }
+  .refresh-btn:hover { background: #f9fafb; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.81a16 16 0 0 0 6.29 6.29l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+  <div>
+    <h1>AI Hospital Receptionist</h1>
+    <span>City Medical Hospital — Powered by local AI (Whisper + Llama + XTTS)</span>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── Call Panel ── -->
+  <div class="call-panel">
+    <h2>Live Call</h2>
+
+    <div id="statusPill" class="status-pill status-idle">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Ready — click Start Call</span>
+    </div>
+
+    <canvas id="visualiser"></canvas>
+
+    <button class="btn btn-start" id="startBtn" onclick="startCall()">📞 Start Call</button>
+    <button class="btn btn-end"   id="endBtn"   onclick="endCall()" disabled>📵 End Call</button>
+
+    <div class="transcript-box" id="transcript">
+      <div class="msg system"><div class="bubble">Call transcript will appear here...</div></div>
+    </div>
+  </div>
+
+  <!-- ── Dashboard ── -->
+  <div class="dashboard">
+    <div class="stats-row">
+      <div class="stat-card"><div class="val" id="statTotal">—</div><div class="lbl">Total Appointments</div></div>
+      <div class="stat-card"><div class="val" id="statConfirmed">—</div><div class="lbl">Confirmed</div></div>
+      <div class="stat-card"><div class="val" id="statCancelled">—</div><div class="lbl">Cancelled</div></div>
+      <div class="stat-card"><div class="val" id="statCalls">—</div><div class="lbl">Active Calls</div></div>
+    </div>
+
+    <div class="table-card">
+      <h2>Appointments <button class="refresh-btn" onclick="loadData()">↺ Refresh</button></h2>
+      <table>
+        <thead><tr>
+          <th>#</th><th>Patient</th><th>Phone</th><th>Doctor</th>
+          <th>Department</th><th>Date</th><th>Time</th><th>Status</th><th></th>
+        </tr></thead>
+        <tbody id="apptTable">
+          <tr><td colspan="9" style="text-align:center;color:#9ca3af;padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── WebSocket & Audio ─────────────────────────────────────────────────────────
+let ws, audioCtx, analyser, sourceNode, processorNode, micStream;
+let isCallActive = false;
+let animFrame;
+
+const sessionId = 'session-' + Date.now();
+
+function setStatus(state, text) {
+  const pill = document.getElementById('statusPill');
+  const dot  = document.getElementById('statusDot');
+  const txt  = document.getElementById('statusText');
+  pill.className = 'status-pill status-' + state;
+  dot.className  = 'dot' + (state === 'active' ? ' pulse' : '');
+  txt.textContent = text;
+}
+
+function addMessage(type, text) {
+  const box = document.getElementById('transcript');
+  const labels = { user: '👤 You', agent: '🤖 Sara', system: '' };
+  const div = document.createElement('div');
+  div.className = 'msg ' + type;
+  div.innerHTML = `
+    ${labels[type] ? `<span class="label">${labels[type]}</span>` : ''}
+    <div class="bubble">${text}</div>`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function startCall() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
+  } catch(e) {
+    alert('Microphone access denied. Please allow microphone and try again.');
+    return;
+  }
+
+  audioCtx = new AudioContext({ sampleRate: 16000 });
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+
+  ws = new WebSocket(`ws://${location.host}/ws/call/${sessionId}`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    isCallActive = true;
+    setStatus('loading', 'Connecting...');
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('endBtn').disabled = false;
+    startVisualiser();
+  };
+
+  ws.onmessage = async (e) => {
+    if (e.data instanceof ArrayBuffer) {
+      // Play received speech audio
+      try {
+        const buf = await audioCtx.decodeAudioData(e.data.slice(0));
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(audioCtx.destination);
+        src.start();
+        setStatus('active', 'Sara is speaking...');
+        src.onended = () => setStatus('active', 'Listening...');
+      } catch(err) { console.warn('Audio decode error', err); }
+    } else {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'call_ended') {
+        setStatus('ended', 'Call ended');
+        addMessage('system', 'Call ended.');
+        cleanupCall();
+      }
+    }
+  };
+
+  ws.onclose = () => { if (isCallActive) cleanupCall(); };
+
+  // Stream microphone to server
+  sourceNode = audioCtx.createMediaStreamSource(micStream);
+  processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+
+  processorNode.onaudioprocess = (e) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const f32 = e.inputBuffer.getChannelData(0);
+      ws.send(f32.buffer.slice(0));
+    }
+  };
+
+  sourceNode.connect(analyser);
+  sourceNode.connect(processorNode);
+  processorNode.connect(audioCtx.destination);
+
+  setStatus('active', 'Listening...');
+}
+
+function endCall() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'end_call' }));
+  }
+  setStatus('ended', 'Ending call...');
+  setTimeout(cleanupCall, 500);
+}
+
+function cleanupCall() {
+  isCallActive = false;
+  if (processorNode) processorNode.disconnect();
+  if (sourceNode)    sourceNode.disconnect();
+  if (micStream)     micStream.getTracks().forEach(t => t.stop());
+  if (ws)            ws.close();
+  cancelAnimationFrame(animFrame);
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('endBtn').disabled = true;
+  loadData();
+}
+
+// ── Visualiser ────────────────────────────────────────────────────────────────
+function startVisualiser() {
+  const canvas = document.getElementById('visualiser');
+  const ctx = canvas.getContext('2d');
+  const data = new Uint8Array(analyser.frequencyBinCount);
+
+  function draw() {
+    animFrame = requestAnimationFrame(draw);
+    analyser.getByteFrequencyData(data);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#f9fafb';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const bw = canvas.width / data.length;
+    data.forEach((v, i) => {
+      const h = (v / 255) * canvas.height;
+      ctx.fillStyle = `hsl(${160 + i}, 70%, 50%)`;
+      ctx.fillRect(i * bw, canvas.height - h, bw - 1, h);
+    });
+  }
+  draw();
+}
+
+// ── Dashboard data ─────────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const [stats, appts] = await Promise.all([
+      fetch('/api/stats').then(r => r.json()),
+      fetch('/api/appointments').then(r => r.json()),
+    ]);
+
+    document.getElementById('statTotal').textContent     = stats.total_appointments;
+    document.getElementById('statConfirmed').textContent = stats.confirmed;
+    document.getElementById('statCancelled').textContent = stats.cancelled;
+    document.getElementById('statCalls').textContent     = stats.active_calls;
+
+    const tbody = document.getElementById('apptTable');
+    if (!appts.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#9ca3af;padding:20px">No appointments yet</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = appts.reverse().map(a => `
+      <tr>
+        <td>#${a.id}</td>
+        <td>${a.patient_name}</td>
+        <td>${a.patient_phone}</td>
+        <td>${a.doctor}</td>
+        <td>${a.department}</td>
+        <td>${formatDate(a.date)}</td>
+        <td>${a.time}</td>
+        <td><span class="badge badge-${a.status}">${a.status}</span></td>
+        <td>
+          ${a.status === 'confirmed'
+            ? `<button class="btn-cancel-row" onclick="cancelAppt(${a.id})">Cancel</button>`
+            : ''}
+        </td>
+      </tr>`).join('');
+  } catch(e) {
+    console.error('Dashboard load error', e);
+  }
+}
+
+function formatDate(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+async function cancelAppt(id) {
+  if (!confirm(`Cancel appointment #${id}?`)) return;
+  await fetch(`/api/appointments/${id}/cancel`, { method: 'PATCH' });
+  loadData();
+}
+
+// Auto-refresh dashboard every 10 seconds
+loadData();
+setInterval(loadData, 10000);
+</script>
+</body>
+</html>

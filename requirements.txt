@@ -1,0 +1,37 @@
+# Core API server
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+websockets==13.0
+python-multipart==0.0.9
+pydantic-settings==2.4.0
+jinja2==3.1.4
+
+# Speech-to-Text (Whisper local GPU)
+faster-whisper==1.0.3
+
+# Text-to-Speech (XTTS v2 voice cloning)
+TTS==0.22.0
+transformers==4.42.0   # Coqui TTS 0.22.0 is incompatible with transformers>=4.43 (BeamSearchScorer removed)
+
+# Voice Activity Detection
+silero-vad==5.1.0
+
+# LLM via Ollama (local, no API key)
+ollama==0.3.3
+
+# Audio processing
+pyaudio==0.2.14
+numpy==1.26.4
+soundfile==0.12.1
+librosa==0.10.2
+pydub==0.25.1
+scipy==1.13.1
+
+# Database
+sqlmodel==0.0.21
+
+# Utilities
+python-dotenv==1.0.0
+loguru==0.7.2
+aiofiles==24.1.0
+httpx==0.27.2
