@@ -39,12 +39,25 @@ class Transcriber:
         if max_val > 1.0:
             audio = audio / max_val
 
+        # initial_prompt biases Whisper toward medical vocabulary,
+        # preventing mishearing e.g. "appointment" → "apartment"
+        medical_prompt = (
+            "This is a hospital appointment booking call. "
+            "Words include: appointment, doctor, department, patient, "
+            "cardiology, orthopedic, pediatric, gynecology, neurology, "
+            "general medicine, eye, ophthalmology, blood test, surgery, "
+            "morning, afternoon, 9 AM, 10 AM, 2 PM, 3 PM, phone number."
+        )
+
         segments, info = self.model.transcribe(
             audio,
-            beam_size=5,
+            beam_size=1,           # greedy decoding — 3x faster, fine for conversation
+            best_of=1,
             language=self._language,
+            initial_prompt=medical_prompt,
             vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=300),
+            vad_parameters=dict(min_silence_duration_ms=200),
+            without_timestamps=True,
         )
 
         text = " ".join(seg.text for seg in segments).strip()

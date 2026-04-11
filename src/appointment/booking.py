@@ -33,19 +33,58 @@ AFTERNOON_SLOTS = [
 ALL_SLOTS = MORNING_SLOTS + AFTERNOON_SLOTS
 
 DEPARTMENT_ALIASES: Dict[str, str] = {
+    # General
     "general medicine": "general",
     "general physician": "general",
+    "general practitioner": "general",
     "gp": "general",
+    "family doctor": "general",
+    # Eye / Ophthalmology → routed to general
+    "eye": "general",
+    "eyes": "general",
+    "vision": "general",
+    "ophthalmology": "general",
+    "ophthalmologist": "general",
+    "eye surgery": "general",
+    "eye problem": "general",
+    "eye check": "general",
+    "sight": "general",
+    # Cardiology
     "heart": "cardiology",
     "cardiac": "cardiology",
+    "chest": "cardiology",
+    "chest pain": "cardiology",
+    "cardiologist": "cardiology",
+    # Orthopedic
     "bone": "orthopedic",
+    "bones": "orthopedic",
+    "joint": "orthopedic",
+    "joints": "orthopedic",
+    "fracture": "orthopedic",
     "ortho": "orthopedic",
+    "orthopedics": "orthopedic",
+    "knee": "orthopedic",
+    "back pain": "orthopedic",
+    "spine": "orthopedic",
+    # Pediatric
     "child": "pediatric",
     "children": "pediatric",
     "kids": "pediatric",
+    "baby": "pediatric",
+    "infant": "pediatric",
+    "paediatric": "pediatric",
+    # Gynecology
     "women": "gynecology",
+    "gynae": "gynecology",
+    "gynaecology": "gynecology",
+    "pregnancy": "gynecology",
+    "maternity": "gynecology",
+    # Neurology
     "neuro": "neurology",
     "brain": "neurology",
+    "headache": "neurology",
+    "migraine": "neurology",
+    "neurologist": "neurology",
 }
 
 

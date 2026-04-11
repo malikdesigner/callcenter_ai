@@ -1,97 +1,61 @@
 """
-Text-to-Speech using Coqui XTTS v2.
-Clones voice from a WAV sample. Supports English and Urdu.
-No API key needed — runs fully local on GPU.
+Text-to-Speech using Edge-TTS (Cloud-based, Ultra-fast).
+Provides professional neural voices with <200ms latency.
 """
 
 import io
 import os
-import torch
-import numpy as np
-import soundfile as sf
+import edge_tts
 from loguru import logger
 from config.settings import settings
 
-
-def _ensure_wav(path: str) -> str:
-    """
-    XTTS v2 requires a WAV file for speaker_wav.
-    If the input is MP3/M4A/etc., convert it once and cache the WAV.
-    Returns the path to a valid WAV file.
-    """
-    if path.lower().endswith(".wav"):
-        return path
-
-    wav_path = os.path.splitext(path)[0] + "_converted.wav"
-    if os.path.exists(wav_path):
-        return wav_path
-
-    logger.info(f"Converting voice sample to WAV: {path} → {wav_path}")
-    try:
-        from pydub import AudioSegment
-        audio = AudioSegment.from_file(path)
-        audio = audio.set_frame_rate(24000).set_channels(1)
-        audio.export(wav_path, format="wav")
-        logger.info("Conversion done.")
-    except Exception as e:
-        logger.error(f"Audio conversion failed: {e}. Trying ffmpeg fallback...")
-        os.system(f'ffmpeg -y -i "{path}" -ar 24000 -ac 1 "{wav_path}"')
-
-    return wav_path
-
-
 class VoiceSynthesizer:
     def __init__(self):
-        raw_path = settings.voice_sample_path
-        self.voice_sample = _ensure_wav(raw_path)
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # We use consistent voices for the receptionist
+        # AvaNeural is one of the most natural English voices available
+        self.voice_map = {
+            "en": "en-US-AvaNeural",
+            "ur": "ur-PK-UzmaNeural"
+        }
         self._language = "en"
-        self._tts = None  # Lazy-loaded on first use
+        logger.info(f"VoiceSynthesizer initialized (Primary: Edge-TTS)")
 
-    def _load(self):
-        if self._tts is not None:
-            return
-        from TTS.api import TTS
-        logger.info("Loading XTTS v2 (first run downloads ~2 GB)...")
-        self._tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(self.device)
-        logger.info("XTTS v2 loaded.")
+    def load(self):
+        """No pre-loading needed for Edge-TTS."""
+        pass
 
     def set_language(self, lang: str):
         """Switch language, e.g. 'en' or 'ur'."""
         self._language = lang
 
-    def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str) -> bytes:
         """
-        Convert text to speech using the cloned voice.
-        Returns WAV bytes ready to stream over WebSocket.
+        Convert text to speech using Edge-TTS.
+        Extremely low latency, cloud-generated.
         """
-        self._load()
-
         if not text.strip():
             return b""
 
-        logger.debug(f"[TTS] synthesizing: {text[:80]}...")
+        logger.debug(f"[TTS] synthesizing (Edge-TTS): {text[:80]}...")
+        
+        voice = self.voice_map.get(self._language, self.voice_map["en"])
+        
+        try:
+            communicate = edge_tts.Communicate(text, voice)
+            buf = io.BytesIO()
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    buf.write(chunk["data"])
+            buf.seek(0)
+            return buf.read()
+        except Exception as e:
+            logger.error(f"[TTS] Edge-TTS failed: {e}")
+            return b""
 
-        wav: list = self._tts.tts(
-            text=text,
-            speaker_wav=self.voice_sample,
-            language=self._language,
-        )
-
-        wav_array = np.array(wav, dtype=np.float32)
-
-        buf = io.BytesIO()
-        sf.write(buf, wav_array, samplerate=24000, format="WAV")
-        buf.seek(0)
-        return buf.read()
-
-    def synthesize_to_file(self, text: str, output_path: str):
+    async def synthesize_to_file(self, text: str, output_path: str):
         """Synthesize and write directly to a file."""
-        self._load()
-        self._tts.tts_to_file(
-            text=text,
-            speaker_wav=self.voice_sample,
-            language=self._language,
-            file_path=output_path,
-        )
-        logger.info(f"[TTS] saved to {output_path}")
+        audio_bytes = await self.synthesize(text)
+        if audio_bytes:
+            with open(output_path, "wb") as f:
+                f.write(audio_bytes)
+            logger.info(f"[TTS] saved to {output_path}")

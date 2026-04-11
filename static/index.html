@@ -174,6 +174,11 @@ let ws, audioCtx, analyser, sourceNode, processorNode, micStream;
 let isCallActive = false;
 let animFrame;
 
+// Audio playback queue — schedules chunks back-to-back with zero gaps
+let nextPlayAt = 0;
+let agentCurrentNode = null;
+let isSaraPlaying = false;
+
 const sessionId = 'session-' + Date.now();
 
 function setStatus(state, text) {
@@ -197,9 +202,49 @@ function addMessage(type, text) {
   box.scrollTop = box.scrollHeight;
 }
 
+// Decode and schedule an audio chunk to play immediately after the previous one
+async function enqueueAudio(arrayBuffer) {
+  try {
+    const audioBuf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+    const src = audioCtx.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(audioCtx.destination);
+
+    // Schedule gaplessly after whatever is already playing
+    const startAt = Math.max(audioCtx.currentTime + 0.02, nextPlayAt);
+    src.start(startAt);
+    nextPlayAt = startAt + audioBuf.duration;
+    agentCurrentNode = src;
+    isSaraPlaying = true;
+
+    setStatus('active', 'Sara is speaking...');
+    src.onended = () => {
+      // Only mark as done when the last scheduled chunk finishes
+      if (audioCtx.currentTime >= nextPlayAt - 0.05) {
+        isSaraPlaying = false;
+        setStatus('active', 'Listening...');
+      }
+    };
+  } catch(err) {
+    console.warn('Audio decode error', err);
+  }
+}
+
+// Stop Sara's audio immediately (e.g. if user starts speaking)
+function stopAgentAudio() {
+  if (agentCurrentNode) {
+    try { agentCurrentNode.stop(); } catch(_) {}
+    agentCurrentNode = null;
+  }
+  nextPlayAt = 0;
+  isSaraPlaying = false;
+}
+
 async function startCall() {
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    });
   } catch(e) {
     alert('Microphone access denied. Please allow microphone and try again.');
     return;
@@ -208,6 +253,7 @@ async function startCall() {
   audioCtx = new AudioContext({ sampleRate: 16000 });
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 256;
+  nextPlayAt = 0;
 
   ws = new WebSocket(`ws://${location.host}/ws/call/${sessionId}`);
   ws.binaryType = 'arraybuffer';
@@ -222,19 +268,16 @@ async function startCall() {
 
   ws.onmessage = async (e) => {
     if (e.data instanceof ArrayBuffer) {
-      // Play received speech audio
-      try {
-        const buf = await audioCtx.decodeAudioData(e.data.slice(0));
-        const src = audioCtx.createBufferSource();
-        src.buffer = buf;
-        src.connect(audioCtx.destination);
-        src.start();
-        setStatus('active', 'Sara is speaking...');
-        src.onended = () => setStatus('active', 'Listening...');
-      } catch(err) { console.warn('Audio decode error', err); }
+      await enqueueAudio(e.data);
     } else {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'call_ended') {
+      if (msg.type === 'transcript') {
+        addMessage('user', msg.text);
+      } else if (msg.type === 'agent_speech') {
+        addMessage('agent', msg.text);
+      } else if (msg.type === 'processing') {
+        setStatus('loading', 'Thinking...');
+      } else if (msg.type === 'call_ended') {
         setStatus('ended', 'Call ended');
         addMessage('system', 'Call ended.');
         cleanupCall();
@@ -244,9 +287,9 @@ async function startCall() {
 
   ws.onclose = () => { if (isCallActive) cleanupCall(); };
 
-  // Stream microphone to server
+  // Stream microphone to server — 2048 samples = 128ms chunks (faster VAD response than 256ms)
   sourceNode = audioCtx.createMediaStreamSource(micStream);
-  processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+  processorNode = audioCtx.createScriptProcessor(2048, 1, 1);
 
   processorNode.onaudioprocess = (e) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -272,6 +315,7 @@ function endCall() {
 
 function cleanupCall() {
   isCallActive = false;
+  stopAgentAudio();
   if (processorNode) processorNode.disconnect();
   if (sourceNode)    sourceNode.disconnect();
   if (micStream)     micStream.getTracks().forEach(t => t.stop());

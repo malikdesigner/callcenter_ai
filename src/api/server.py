@@ -4,11 +4,10 @@ REST endpoints for appointment management and dashboard data.
 """
 
 import json
-import uuid
-from typing import Dict, List
+from typing import Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -18,7 +17,6 @@ from sqlmodel import Session, select
 
 app = FastAPI(title="AI Hospital Receptionist", version="1.0.0")
 
-# Active call sessions
 _active_calls: Dict[str, CallHandler] = {}
 
 
@@ -28,7 +26,6 @@ _active_calls: Dict[str, CallHandler] = {}
 async def startup():
     create_tables()
     logger.info("Database ready.")
-    # Pre-load models so first call doesn't stall
     CallHandler.load_models()
 
 
@@ -52,10 +49,22 @@ async def call_ws(websocket: WebSocket, session_id: str):
     handler = CallHandler(session_id=session_id)
     _active_calls[session_id] = handler
 
+    async def send(item):
+        """Dispatch a (type, payload) tuple to the browser."""
+        kind, payload = item
+        if kind == "audio":
+            await websocket.send_bytes(payload)
+        elif kind == "json":
+            await websocket.send_json(payload)
+
     try:
-        # Send greeting audio immediately
-        greeting_audio = await handler.start_call()
-        await websocket.send_bytes(greeting_audio)
+        # Stream greeting sentences as soon as they're ready
+        async for chunk in handler.start_call():
+            kind, payload = chunk
+            if kind == "audio":
+                await websocket.send_bytes(payload)
+            elif kind == "json":
+                await websocket.send_json(payload)
 
         while handler.is_active:
             try:
@@ -64,16 +73,14 @@ async def call_ws(websocket: WebSocket, session_id: str):
                 break
 
             if "bytes" in data:
-                response_audio = await handler.process_audio_chunk(data["bytes"])
-                if response_audio:
-                    await websocket.send_bytes(response_audio)
+                async for item in handler.process_audio_chunk(data["bytes"]):
+                    await send(item)
 
             elif "text" in data:
                 msg = json.loads(data["text"])
                 if msg.get("type") == "end_call":
                     break
 
-        # Send end signal to browser
         try:
             await websocket.send_json({"type": "call_ended"})
         except Exception:
@@ -140,10 +147,9 @@ def stats():
     total = len(all_appts)
     confirmed = sum(1 for a in all_appts if a.status == "confirmed")
     cancelled = sum(1 for a in all_appts if a.status == "cancelled")
-    active_calls = len(_active_calls)
     return {
         "total_appointments": total,
         "confirmed": confirmed,
         "cancelled": cancelled,
-        "active_calls": active_calls,
+        "active_calls": len(_active_calls),
     }
