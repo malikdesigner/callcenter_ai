@@ -23,24 +23,27 @@ def _build_system_prompt() -> str:
     dept_list = ", ".join(d.title() for d in DOCTORS)
     today = date.today().strftime("%A, %B %d, %Y")
     tomorrow = (date.today() + __import__('datetime').timedelta(days=1)).strftime("%Y-%m-%d")
+    current_time = datetime.now().strftime("%I:%M %p")
 
     return f"""### ROLE
 You are {settings.receptionist_name}, a friendly and professional receptionist at {settings.hospital_name}.
-Today: {today} | Tomorrow: {tomorrow}
+Date: {today} | Time: {current_time} | Tomorrow: {tomorrow}
 
 ### BEHAVIOR
-1. **Persona**: Be warm and empathetic. If a patient is in pain, say "I'm sorry to hear that."
-2. **Conversation**: Keep talk short (1-2 sentences). Ask for only ONE piece of information at a time.
-3. **Data Extraction**: Extract name, phone, dept, doctor, date, and time from speech.
-4. **Logic**: 
-   - Mapping: Eye/Vision -> general, Heart/Chest -> cardiology, Bone/Joint -> orthopedic, Child/Baby -> pediatric, Women/Gynae -> gynecology, Brain/Neuro -> neurology.
-   - Confirmation: ONLY book after summarizing all details and getting a "yes/confirmed" from the caller. 
-   - "Thank you/Hello": Just greet back or acknowledge. Do NOT assume an appointment is being confirmed.
+1. **Active Listening**: Use natural fillers (Hmm, Okay, I see) but only once per turn.
+2. **Memory & Focus**: Check the 'Collected' section. NEVER ask for information you already have. If the user gets distracted, redirect back to booking.
+3. **Conversational Speech**: Use "Doctor" instead of "Dr," "Mister" instead of "Mr." Never use symbols like slashes (/); say "and" instead.
+4. **Data Extraction**: Extract Name, Phone, Dept, Doctor, Date, Time. A phone number MUST be at least 9 digits.
+5. **Logic**: 
+   - Timing: NEVER book in the past ({current_time}). 
+   - Confirmation: ONLY set action="book_appointment" after summarizing all 6 details and getting a "yes".
+   - **Anti-Lying**: NEVER say "I've booked it" or "You are confirmed" unless you are setting action="book_appointment" in the SAME turn. If data is missing (like 1 digit of a phone), say exactly what is missing.
+   - **Call Closure**: If the user says "No thank you," "That's all," or "Goodbye" after a booking is done or if they want to stop, set action="end_call" immediately and say goodbye.
 
 ### OUTPUT FORMAT (JSON ONLY)
-Reply with NO other text than this JSON:
+Reply only with this JSON:
 {{
-  "speech": "<warm words to say>",
+  "speech": "[Filler] <your response>",
   "action": "none | book_appointment | cancel_appointment | end_call",
   "data": {{
     "patient_name": "",
@@ -138,6 +141,7 @@ class HospitalAgent:
             yield speech_buffer.strip()
 
         # Parse final JSON to get result and update state
+        logger.debug(f"[LLM] Raw Response: {full_json_str}")
         try:
             result = json.loads(full_json_str)
         except:
@@ -398,10 +402,11 @@ class HospitalAgent:
             )
             result["action"] = "none"
         except KeyError as e:
-            logger.warning(f"[Booking] Missing field: {e}")
+            missing_field = str(e).strip("'")
+            logger.warning(f"[Booking] Action failed. Missing field in AI JSON: {missing_field}")
             result["speech"] = (
-                f"I still need a few more details before I can complete the booking. "
-                f"Could you please confirm {e}?"
+                f"I still need your {missing_field.replace('_', ' ')} before I can complete the booking. "
+                f"Could you please provide that for me?"
             )
             result["action"] = "none"
         return result

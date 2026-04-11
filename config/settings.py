@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # Audio
     sample_rate: int = 16000
-    silence_duration: float = 0.6         # seconds of silence before processing speech
+    silence_duration: float = 1.0         # seconds of silence before processing speech
 
     # VAD
     vad_threshold: float = 0.4
