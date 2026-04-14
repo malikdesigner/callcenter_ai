@@ -11,14 +11,25 @@ from config.settings import settings
 
 class Transcriber:
     def __init__(self):
-        logger.info(
-            f"Loading Whisper '{settings.whisper_model}' on {settings.whisper_device}..."
-        )
-        self.model = WhisperModel(
-            settings.whisper_model,
-            device=settings.whisper_device,
-            compute_type=settings.whisper_compute_type,
-        )
+        device = settings.whisper_device
+        compute = settings.whisper_compute_type
+        logger.info(f"Loading Whisper '{settings.whisper_model}' on {device} ({compute})...")
+        try:
+            self.model = WhisperModel(
+                settings.whisper_model,
+                device=device,
+                compute_type=compute,
+            )
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower() and device == "cuda":
+                logger.warning("[STT] CUDA out of memory — retrying Whisper on CPU (int8)")
+                self.model = WhisperModel(
+                    settings.whisper_model,
+                    device="cpu",
+                    compute_type="int8",
+                )
+            else:
+                raise
         self._language = "en"
         logger.info("Whisper loaded.")
 
@@ -26,10 +37,11 @@ class Transcriber:
         """Switch language, e.g. 'en' or 'ur'."""
         self._language = lang
 
-    def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> str:
+    def transcribe(self, audio: np.ndarray, language: str = None, sample_rate: int = 16000) -> str:
         """
         Transcribe a numpy float32 audio array.
         Audio must be mono, 16 kHz, float32 in range [-1, 1].
+        Pass language explicitly to avoid race conditions when shared across sessions.
         """
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
@@ -39,25 +51,36 @@ class Transcriber:
         if max_val > 1.0:
             audio = audio / max_val
 
-        # initial_prompt biases Whisper toward medical vocabulary,
-        # preventing mishearing e.g. "appointment" → "apartment"
-        medical_prompt = (
-            "This is a hospital appointment booking call. "
-            "Words include: appointment, doctor, department, patient, "
-            "cardiology, orthopedic, pediatric, gynecology, neurology, "
-            "general medicine, eye, ophthalmology, blood test, surgery, "
-            "morning, afternoon, 9 AM, 10 AM, 2 PM, 3 PM, phone number."
-        )
+        # Language-specific initial prompts bias Whisper toward medical vocabulary
+        lang = language or self._language
+        if lang == "ur":
+            # Urdu medical vocabulary — significantly improves Urdu STT accuracy
+            initial_prompt = (
+                "یہ ایک ہسپتال کی اپائنٹمنٹ بکنگ کال ہے۔ "
+                "الفاظ میں شامل ہیں: اپائنٹمنٹ، ڈاکٹر، شعبہ، مریض، نام، فون نمبر، "
+                "کارڈیالوجی، آرتھوپیڈک، نیورولوجی، جنرل میڈیسن، گائناکالوجی، پیڈیاٹرک، "
+                "بخار، درد، کھانسی، سر درد، پیٹ درد، آنکھ، دانت، ہڈی، دل، "
+                "صبح، دوپہر، شام، تاریخ، وقت، کل، پرسوں۔"
+            )
+        else:
+            initial_prompt = (
+                "This is a hospital appointment booking call. "
+                "Words include: appointment, doctor, department, patient, "
+                "cardiology, orthopedic, pediatric, gynecology, neurology, "
+                "general medicine, ophthalmology, blood test, surgery, fever, "
+                "pain, cough, headache, morning, afternoon, 9 AM, 2 PM, phone number."
+            )
 
         segments, info = self.model.transcribe(
             audio,
-            beam_size=1,           # greedy decoding — 3x faster, fine for conversation
-            best_of=1,
-            language=self._language,
-            initial_prompt=medical_prompt,
+            beam_size=3,           # beam_size=3 gives meaningfully better accuracy vs greedy
+            best_of=3,
+            language=lang,
+            initial_prompt=initial_prompt,
             vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=200),
+            vad_parameters=dict(min_silence_duration_ms=500),
             without_timestamps=True,
+            condition_on_previous_text=False,  # prevents repetition artifacts
         )
 
         text = " ".join(seg.text for seg in segments).strip()

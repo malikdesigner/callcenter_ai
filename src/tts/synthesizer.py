@@ -1,59 +1,84 @@
 """
-Text-to-Speech using Edge-TTS (Cloud-based, Ultra-fast).
-Provides professional neural voices with <200ms latency.
+Text-to-Speech using Edge-TTS (Microsoft Neural Voices).
+Uses plain-text Communicate with per-language rate/pitch/volume tuning.
+
+Voice choices:
+  EN  — en-US-JennyNeural   (warm, professional phone voice)
+  UR  — ur-PK-UzmaNeural    (best Pakistani Urdu neural voice available)
 """
 
 import io
-import os
 import edge_tts
 from loguru import logger
-from config.settings import settings
+
+
+# ── Voice & prosody configuration ─────────────────────────────────────────────
+
+VOICE_CONFIG = {
+    "en": {
+        "voice":  "en-US-JennyNeural",
+        "rate":   "-5%",        # Slightly slower = clearer on phone
+        "pitch":  "+0Hz",
+        "volume": "+0%",
+    },
+    "ur": {
+        "voice":  "ur-PK-UzmaNeural",
+        "rate":   "-10%",       # Urdu needs more breathing room for clarity
+        "pitch":  "+1Hz",       # Slightly warmer tone
+        "volume": "+0%",
+    },
+}
+
 
 class VoiceSynthesizer:
     def __init__(self):
-        # We use consistent voices for the receptionist
-        # AvaNeural is one of the most natural English voices available
-        self.voice_map = {
-            "en": "en-US-AvaNeural",
-            "ur": "ur-PK-UzmaNeural"
-        }
         self._language = "en"
-        logger.info(f"VoiceSynthesizer initialized (Primary: Edge-TTS)")
+        logger.info(
+            f"VoiceSynthesizer initialized — "
+            f"EN: {VOICE_CONFIG['en']['voice']} | "
+            f"UR: {VOICE_CONFIG['ur']['voice']}"
+        )
 
     def load(self):
-        """No pre-loading needed for Edge-TTS."""
-        pass
+        pass  # Edge-TTS is cloud-based; nothing to pre-load
 
     def set_language(self, lang: str):
-        """Switch language, e.g. 'en' or 'ur'."""
         self._language = lang
 
     async def synthesize(self, text: str) -> bytes:
         """
-        Convert text to speech using Edge-TTS.
-        Extremely low latency, cloud-generated.
+        Convert text → speech bytes using Edge-TTS with rate/pitch prosody.
         """
-        if not text.strip():
+        text = text.strip()
+        if not text:
             return b""
 
-        logger.debug(f"[TTS] synthesizing (Edge-TTS): {text[:80]}...")
-        
-        voice = self.voice_map.get(self._language, self.voice_map["en"])
-        
+        cfg = VOICE_CONFIG.get(self._language, VOICE_CONFIG["en"])
+        logger.debug(f"[TTS] {self._language.upper()} | {cfg['voice']} | {text[:70]}...")
+
         try:
-            communicate = edge_tts.Communicate(text, voice)
+            communicate = edge_tts.Communicate(
+                text,
+                cfg["voice"],
+                rate=cfg["rate"],
+                pitch=cfg["pitch"],
+                volume=cfg["volume"],
+            )
             buf = io.BytesIO()
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     buf.write(chunk["data"])
             buf.seek(0)
-            return buf.read()
+            data = buf.read()
+            if data:
+                return data
+            logger.warning(f"[TTS] Edge-TTS returned empty audio for: {text[:50]}")
+            return b""
         except Exception as e:
             logger.error(f"[TTS] Edge-TTS failed: {e}")
             return b""
 
     async def synthesize_to_file(self, text: str, output_path: str):
-        """Synthesize and write directly to a file."""
         audio_bytes = await self.synthesize(text)
         if audio_bytes:
             with open(output_path, "wb") as f:

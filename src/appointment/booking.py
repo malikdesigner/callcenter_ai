@@ -9,28 +9,13 @@ from typing import Dict, List, Optional
 from loguru import logger
 from sqlmodel import Session, select
 
-from src.appointment.models import Appointment, engine
+from src.appointment.models import Appointment, Doctor, Department, DoctorSlot, engine
 
 # ── Hospital configuration ────────────────────────────────────────────────────
 
-DOCTORS: Dict[str, List[str]] = {
-    "general":      ["Dr. Ahmed Khan",   "Dr. Sarah Malik"],
-    "cardiology":   ["Dr. Ali Raza"],
-    "orthopedic":   ["Dr. Fatima Noor"],
-    "pediatric":    ["Dr. Usman Siddiq", "Dr. Nadia Shah"],
-    "gynecology":   ["Dr. Amna Tariq"],
-    "neurology":    ["Dr. Kamran Baig"],
-}
+# DOCTORS dictionary is now legacy, using DB.
 
-MORNING_SLOTS = [
-    "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM",
-    "11:00 AM", "11:30 AM",
-]
-AFTERNOON_SLOTS = [
-    "02:00 PM", "02:30 PM", "03:00 PM", "03:30 PM",
-    "04:00 PM", "04:30 PM",
-]
-ALL_SLOTS = MORNING_SLOTS + AFTERNOON_SLOTS
+# Slots are now generated dynamically per doctor.
 
 DEPARTMENT_ALIASES: Dict[str, str] = {
     # General
@@ -88,12 +73,24 @@ DEPARTMENT_ALIASES: Dict[str, str] = {
 }
 
 
-def resolve_department(raw: str) -> Optional[str]:
-    """Normalise a department name from free text."""
-    key = raw.lower().strip()
-    if key in DOCTORS:
-        return key
-    return DEPARTMENT_ALIASES.get(key)
+def resolve_department(query: str) -> Optional[str]:
+    """Resolves a raw query to a canonical department name using aliases."""
+    q = query.lower().strip()
+    if q in DEPARTMENT_ALIASES:
+        return DEPARTMENT_ALIASES[q]
+    
+    # Partial matching: "eye" in "eye surgery"
+    for alias, canonical in DEPARTMENT_ALIASES.items():
+        if alias in q or q in alias:
+            return canonical
+            
+    # Check if key matches a real department in DB
+    with Session(engine) as session:
+        dept = session.exec(select(Department).where(Department.name == q)).first()
+        if dept:
+            return q
+            
+    return None
 
 
 # ── Booking system ─────────────────────────────────────────────────────────────
@@ -101,6 +98,22 @@ def resolve_department(raw: str) -> Optional[str]:
 class BookingSystem:
 
     # ── Availability ──────────────────────────────────────────────────────────
+
+    def _generate_slots(self, start_str: str, end_str: str, interval_min: int = 30) -> List[str]:
+        """Generate a list of time strings between start and end (inclusive, 30-min steps)."""
+        slots = []
+        try:
+            current = datetime.strptime(start_str, "%I:%M %p")
+            end = datetime.strptime(end_str, "%I:%M %p")
+            
+            while current <= end:
+                slots.append(current.strftime("%I:%M %p"))
+                current += timedelta(minutes=interval_min)
+        except Exception as e:
+            logger.error(f"[Booking] Error generating slots: {e}")
+            return ["09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM"] # Fallback
+
+        return slots
 
     def get_booked_slots(self, doctor_name: str, target_date: date) -> set:
         with Session(engine) as session:
@@ -114,9 +127,46 @@ class BookingSystem:
         return {r.appointment_time for r in rows}
 
     def get_available_slots(self, doctor_name: str, target_date: date) -> List[str]:
-        """Return free time slots for a doctor on a given date."""
+        """Return free time slots for a doctor on a given date by aggregating all their shifts."""
         booked = self.get_booked_slots(doctor_name, target_date)
-        return [s for s in ALL_SLOTS if s not in booked]
+        
+        # Fetch all shifts/slots defined for this doctor
+        with Session(engine) as session:
+            doctor_shifts = session.exec(select(DoctorSlot).where(DoctorSlot.doctor_name == doctor_name)).all()
+        
+        if not doctor_shifts:
+            # Default fallback if no slots defined yet
+            possible_slots = self._generate_slots("09:00 AM", "05:00 PM")
+        else:
+            # Aggregate all possible slots from all shifts
+            possible_slots = []
+            for shift in doctor_shifts:
+                possible_slots.extend(self._generate_slots(shift.start_time, shift.end_time))
+            # Sort and remove duplicates if any overlap occurred
+            possible_slots = sorted(list(set(possible_slots)), key=lambda x: datetime.strptime(x, "%I:%M %p"))
+
+        # Filter out slots in the past if the date is today
+        now = datetime.now()
+        is_today = (target_date == now.date())
+        
+        available = []
+        for slot in possible_slots:
+            if slot in booked:
+                continue
+            
+            if is_today:
+                # Convert slot (e.g. "09:00 AM") to datetime for comparison
+                slot_time = datetime.strptime(slot, "%I:%M %p").time()
+                current_time = now.time()
+                # Use a 15-min buffer (can't book something that starts in less than 15 mins)
+                buffer_time = (datetime.combine(date.min, current_time) + timedelta(minutes=15)).time()
+                
+                if slot_time < buffer_time:
+                    continue
+            
+            available.append(slot)
+            
+        return available
 
     def get_next_available(
         self, department: str, days_ahead: int = 7
@@ -126,14 +176,16 @@ class BookingSystem:
         Returns a list of {doctor, date, slots} dicts.
         """
         dept_key = resolve_department(department) or department.lower()
-        doctors = DOCTORS.get(dept_key, [])
+        with Session(engine) as session:
+            doctors = session.exec(select(Doctor).where(Doctor.department_name == dept_key, Doctor.is_active == True)).all()
+            doctor_names = [d.name for d in doctors]
         results = []
 
         for offset in range(1, days_ahead + 1):
             check_date = date.today() + timedelta(days=offset)
             if check_date.weekday() == 6:   # Skip Sundays
                 continue
-            for doctor in doctors:
+            for doctor in doctor_names:
                 slots = self.get_available_slots(doctor, check_date)
                 if slots:
                     results.append(
@@ -157,7 +209,18 @@ class BookingSystem:
         appointment_date: date,
         appointment_time: str,
         reason: str = "",
+        transcript: Optional[str] = None,
     ) -> Appointment:
+        # ── Defensive Placeholder Check ──
+        placeholders = {"patient name", "unknown", "n/a", "none", "phone number", "placeholder"}
+        if patient_name.lower() in placeholders or len(patient_name) < 2:
+            raise ValueError(f"Invalid patient name provided: '{patient_name}'")
+        
+        # Phone Validation (already partially implemented, but strengthening here)
+        clean_phone = "".join(filter(str.isdigit, patient_phone))
+        if not (7 <= len(clean_phone) <= 15) or patient_phone.lower() in placeholders:
+             raise ValueError(f"Invalid phone number provided: '{patient_phone}'")
+
         available = self.get_available_slots(doctor_name, appointment_date)
         if appointment_time not in available:
             raise ValueError(
@@ -173,6 +236,7 @@ class BookingSystem:
             appointment_date=appointment_date,
             appointment_time=appointment_time,
             reason=reason,
+            transcript=transcript,
         )
 
         with Session(engine) as session:
@@ -217,10 +281,12 @@ class BookingSystem:
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def department_list(self) -> str:
-        return ", ".join(
-            dept.title() for dept in DOCTORS
-        )
+        with Session(engine) as session:
+            depts = session.exec(select(Department)).all()
+            return ", ".join(d.name.title() for d in depts)
 
     def doctors_in_department(self, department: str) -> List[str]:
         dept_key = resolve_department(department) or department.lower()
-        return DOCTORS.get(dept_key, [])
+        with Session(engine) as session:
+            doctors = session.exec(select(Doctor).where(Doctor.department_name == dept_key, Doctor.is_active == True)).all()
+            return [d.name for d in doctors]

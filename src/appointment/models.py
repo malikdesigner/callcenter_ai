@@ -24,9 +24,31 @@ class Appointment(SQLModel, table=True):
     appointment_date: date = Field(index=True)
     appointment_time: str          # "09:00 AM"
     reason: Optional[str] = None
+    transcript: Optional[str] = Field(default=None)
     status: str = Field(default="confirmed")   # confirmed | cancelled | completed
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+class Department(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    description: str = ""
+
+
+class Doctor(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    department_name: str = Field(index=True) # References Department.name
+    is_active: bool = Field(default=True)
+    specialty: str = ""
+
+
+class DoctorSlot(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    doctor_name: str = Field(index=True)
+    start_time: str = Field(default="09:00 AM")
+    end_time: str = Field(default="05:00 PM")
 
 
 def create_tables():

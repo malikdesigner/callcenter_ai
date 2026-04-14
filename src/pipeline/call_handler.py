@@ -5,12 +5,37 @@ Each CallHandler instance manages one active call session.
 """
 
 import asyncio
+import re
 import time
 from collections import deque
 from typing import Optional
 
 import numpy as np
 from loguru import logger
+
+
+def _sanitize_for_tts(text: str) -> str:
+    """
+    Strip content that should never be spoken aloud:
+    URLs, markdown formatting, HTML tags, JSON artifacts.
+    """
+    # Remove URLs (http/https/www)
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)
+    # Remove markdown links [text](url) → keep text only
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+    # Remove HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Remove markdown bold/italic/code: **, *, __, _, ``, `
+    text = re.sub(r'(\*\*|__|\*|_|`{1,3})', '', text)
+    # Remove markdown headers (# ## ###)
+    text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+    # Remove JSON field names that leaked into speech (e.g. "action": "ask")
+    text = re.sub(r'"?\w+"?\s*:\s*"[^"]*"', '', text)
+    # Remove leftover curly/square braces
+    text = re.sub(r'[{}\[\]]', '', text)
+    # Collapse multiple spaces/newlines
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
 
 from config.settings import settings
 from src.llm.agent import HospitalAgent
@@ -25,28 +50,34 @@ class CallHandler:
     Feed raw audio chunks via process_audio_chunk().
     """
 
-    # Shared model instances (loaded once, reused across calls)
+    # Shared model instances (loaded once, reused across calls in the same process)
     _vad: Optional[VADDetector] = None
     _stt: Optional[Transcriber] = None
     _tts: Optional[VoiceSynthesizer] = None
+    _models_loaded: bool = False
 
     @classmethod
     def load_models(cls):
-        """Pre-load all models at startup so the first call isn't slow."""
+        """Pre-load all models at startup. Safe to call from multiple apps — loads only once."""
+        if cls._models_loaded:
+            logger.info("All models ready.")
+            return
         if cls._vad is None:
             cls._vad = VADDetector()
         if cls._stt is None:
             cls._stt = Transcriber()
         if cls._tts is None:
             cls._tts = VoiceSynthesizer()
-            cls._tts.load()  # Ensure weights are in GPU memory
+            cls._tts.load()
+        cls._models_loaded = True  # only set True after all models loaded successfully
         logger.info("All models ready.")
 
     # ── Instance ──────────────────────────────────────────────────────────────
 
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, language: str = "en"):
         self.session_id = session_id
-        self.agent = HospitalAgent()
+        self.language = language
+        self.agent = HospitalAgent(language=language)
 
         # Per-call audio state
         self._speech_buffer: list = []
@@ -70,10 +101,10 @@ class CallHandler:
         """
         import hashlib
         import os
-        import re
 
         self.agent.reset()
         self.__class__.load_models()
+        self._tts.set_language(self.language)
         self._is_active = True
         self._speech_buffer = []
         self._last_speech_ts = None
@@ -97,6 +128,7 @@ class CallHandler:
             return
 
         # Synthesize sentence-by-sentence and stream immediately
+        greeting = _sanitize_for_tts(greeting)
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', greeting) if s.strip()]
         full_audio = b""
         for sentence in sentences:
@@ -174,7 +206,7 @@ class CallHandler:
             # 1. Speech → Text  (GPU, runs in thread pool to not block event loop)
             loop = asyncio.get_event_loop()
             transcript = await loop.run_in_executor(
-                None, self._stt.transcribe, audio_array
+                None, lambda: self._stt.transcribe(audio_array, language=self.language)
             )
             logger.info(f"[{self.session_id}] User: {transcript}")
 
@@ -190,7 +222,7 @@ class CallHandler:
             agent_speech_parts = []
             async for item in self.agent.process_turn_stream(transcript):
                 if isinstance(item, str):
-                    sentence = item.strip()
+                    sentence = _sanitize_for_tts(item.strip())
                     if not sentence:
                         continue
                     logger.debug(f"[{self.session_id}] TTS sentence: {sentence}")
@@ -203,7 +235,7 @@ class CallHandler:
                     result = item
                     action = result.get("action", "none")
                     logger.info(f"[{self.session_id}] Action: {action}")
-                    if action == "end_call":
+                    if action == "end":
                         self._is_active = False
 
             # Send full agent speech to transcript

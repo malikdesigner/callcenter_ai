@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Admin | Sara AI Receptionist</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-body: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.3);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --card-border: rgba(255, 255, 255, 0.1);
+            --danger: #ef4444;
+            --success: #22c55e;
+            --sidebar-w: 260px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-body);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            background-image:
+                radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 100% 100%, rgba(56, 189, 248, 0.05) 0%, transparent 40%);
+        }
+
+        /* ── Sidebar ───────────────────────────────────────────────────────── */
+        aside {
+            width: var(--sidebar-w);
+            background: rgba(15, 23, 42, 0.8);
+            border-right: 1px solid var(--card-border);
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            backdrop-filter: blur(20px);
+            position: fixed;
+            height: 100vh;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #fff, var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .nav-item {
+            padding: 0.85rem 1rem;
+            border-radius: 0.75rem;
+            color: var(--text-dim);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.3s;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .nav-item:hover,
+        .nav-item.active {
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent);
+        }
+
+        /* ── Main content ──────────────────────────────────────────────────── */
+        main {
+            flex: 1;
+            margin-left: var(--sidebar-w);
+            padding: 2rem 3rem;
+            max-width: 1400px;
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ── Glass Panels ─────────────────────────────────────────────────── */
+        .glass-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--card-border);
+            border-radius: 1.25rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(12px);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        /* ── Stats ────────────────────────────────────────────────────────── */
+        .grid-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--card-border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            transition: border-color 0.3s;
+        }
+
+        .stat-card:hover {
+            border-color: var(--accent);
+        }
+
+        .stat-card .label {
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        /* ── Tables ────────────────────────────────────────────────────────── */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 1rem;
+            color: var(--text-dim);
+            font-size: 0.85rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        tr:hover td {
+            background: rgba(56, 189, 248, 0.03);
+        }
+
+        .btn-action {
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--card-border);
+            background: transparent;
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .btn-action:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-danger:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        /* ── Forms ────────────────────────────────────────────────────────── */
+        .form-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            align-items: end;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-bottom: 0.4rem;
+        }
+
+        input,
+        select {
+            width: 100%;
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid var(--card-border);
+            color: white;
+            padding: 0.85rem;
+            border-radius: 0.75rem;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--accent);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 0.85rem 1.5rem;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+
+        /* ── Modal ────────────────────────────────────────────────────────── */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.9);
+            z-index: 1000;
+            backdrop-filter: blur(8px);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1e293b;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            border-radius: 1.5rem;
+            border: 1px solid var(--card-border);
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            position: relative;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        #transcript-body {
+            background: rgba(15, 23, 42, 0.5);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: inherit;
+            line-height: 1.6;
+            color: var(--text-main);
+        }
+    </style>
+</head>
+
+<body>
+
+    <aside>
+        <div class="logo">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="m12 14 4-4" />
+                <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+            </svg>
+            Appointment Booking
+        </div>
+
+        <nav>
+            <div class="nav-item active" onclick="showTab('overview')">
+                <span>🏠</span> Overview
+            </div>
+            <div class="nav-item" onclick="showTab('booking')">
+                <span>➕</span> New Booking
+            </div>
+            <div class="nav-item" onclick="showTab('departments')">
+                <span>🏢</span> Departments
+            </div>
+            <div class="nav-item" onclick="showTab('doctors')">
+                <span>👨‍⚕️</span> Doctors
+            </div>
+            <div class="nav-item" onclick="showTab('schedules')">
+                <span>⏰</span> Time Slots
+            </div>
+            <a href="/" class="nav-item" style="margin-top: 2rem; opacity: 0.6;">
+                <span>📞</span> Call UI
+            </a>
+        </nav>
+    </aside>
+
+    <main>
+        <!-- TAB: Manual Booking -->
+        <div id="tab-booking" class="tab-content">
+            <div class="section-header">
+                <h2>Manual Appointment Booking</h2>
+            </div>
+
+            <div class="glass-panel" style="max-width: 800px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                    <!-- Left: Patient Details -->
+                    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                        <div>
+                            <label>Patient Name</label>
+                            <input type="text" id="m-patient-name" placeholder="Full Name">
+                        </div>
+                        <div>
+                            <label>Patient Phone</label>
+                            <input type="text" id="m-patient-phone" placeholder="9-11 digits">
+                        </div>
+                        <div>
+                            <label>Reason for Visit</label>
+                            <textarea id="m-reason"
+                                style="width: 100%; min-height: 80px; background: rgba(30, 41, 59, 0.6); border: 1px solid var(--card-border); color: white; padding: 0.85rem; border-radius: 0.75rem; outline: none;"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Right: Schedule Details -->
+                    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                        <div>
+                            <label>Department</label>
+                            <select id="m-dept-select" onchange="filterDoctorsForBooking()"></select>
+                        </div>
+                        <div>
+                            <label>Doctor</label>
+                            <select id="m-doctor-select" onchange="fetchBookingSlots()"></select>
+                        </div>
+                        <div>
+                            <label>Select Date</label>
+                            <input type="date" id="m-date" onchange="fetchBookingSlots()">
+                        </div>
+                        <div>
+                            <label>Available Slots</label>
+                            <select id="m-slot-select"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 3rem; display: flex; justify-content: flex-end;">
+                    <button class="btn-primary" onclick="submitManualBooking()" style="padding: 1rem 3rem;">Confirm
+                        Appointment</button>
+                </div>
+            </div>
+        </div>
+        <div id="tab-overview" class="tab-content active">
+            <div class="section-header">
+                <h2>Hospital Overview</h2>
+            </div>
+
+            <div class="grid-stats">
+                <div class="stat-card">
+                    <span class="label">Total Appointments</span>
+                    <span id="stat-total" class="value">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="label">Confirmed</span>
+                    <span id="stat-confirmed" class="value" style="color: var(--success)">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="label">Cancelled</span>
+                    <span id="stat-cancelled" class="value" style="color: var(--danger)">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="label">Live Calls</span>
+                    <span id="stat-live" class="value" style="color: var(--accent)">0</span>
+                </div>
+            </div>
+
+            <div class="glass-panel">
+                <h3>Recent Activity</h3>
+                <table style="margin-top: 1rem;">
+                    <thead>
+                        <tr>
+                            <th>Patient</th>
+                            <th>Doctor/Dept</th>
+                            <th>Time</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="overview-appointments"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB: Departments -->
+        <div id="tab-departments" class="tab-content">
+            <div class="section-header">
+                <h2>Manage Departments</h2>
+            </div>
+
+            <div class="form-container">
+                <div>
+                    <label>Department Name</label>
+                    <input type="text" id="dept-name" placeholder="e.g. Cardiology">
+                </div>
+                <div>
+                    <label>Description</label>
+                    <input type="text" id="dept-desc" placeholder="Optional info">
+                </div>
+                <button class="btn-primary" onclick="handleDeptSubmit()">Save Department</button>
+            </div>
+
+            <div class="glass-panel">
+                <table id="table-depts">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="list-depts"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB: Doctors -->
+        <div id="tab-doctors" class="tab-content">
+            <div class="section-header">
+                <h2>Hospital Staff</h2>
+            </div>
+
+            <div class="form-container">
+                <div>
+                    <label>Doctor Name</label>
+                    <input type="text" id="doc-name" placeholder="Dr. John Doe">
+                </div>
+                <div>
+                    <label>Department</label>
+                    <select id="doc-dept-select"></select>
+                </div>
+                <div>
+                    <label>Specialty</label>
+                    <input type="text" id="doc-specialty" placeholder="e.g. Heart Surgeon">
+                </div>
+                <button class="btn-primary" onclick="handleDocSubmit()">Save Doctor</button>
+            </div>
+
+            <div class="glass-panel">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Department</th>
+                            <th>Specialty</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="list-doctors"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB: Schedules -->
+        <div id="tab-schedules" class="tab-content">
+            <div class="section-header">
+                <h2>Doctor Time Slots</h2>
+            </div>
+
+            <div class="form-container">
+                <div>
+                    <label>Select Doctor</label>
+                    <select id="slot-doc-select"></select>
+                </div>
+                <div>
+                    <label>Start Time</label>
+                    <input type="time" id="slot-start" value="09:00">
+                </div>
+                <div>
+                    <label>End Time</label>
+                    <input type="time" id="slot-end" value="17:00">
+                </div>
+                <button class="btn-primary" onclick="addSlot()">Add Shift</button>
+            </div>
+
+            <div class="glass-panel">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Doctor</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="list-slots"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal for Transcripts -->
+    <div id="transcript-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Conversation Script</h2>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            <div id="transcript-body"></div>
+        </div>
+    </div>
+
+    <script>
+        let state = { depts: [], doctors: [], editId: null };
+
+        // ── Tab Logic ─────────────────────────────────────────────────────────────
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+
+            document.getElementById('tab-' + tabId).classList.add('active');
+            event.currentTarget.classList.add('active');
+
+            if (tabId === 'overview') loadOverview();
+            if (tabId === 'booking') prepareBookingTab();
+            if (tabId === 'departments') loadDepts();
+            if (tabId === 'doctors') loadDocs();
+            if (tabId === 'schedules') loadSlots();
+        }
+
+        // ── API Helpers ───────────────────────────────────────────────────────────
+        async function api(path, options = {}) {
+            const res = await fetch(path, {
+                ...options,
+                headers: { 'Content-Type': 'application/json', ...options.headers }
+            });
+            return res.json();
+        }
+
+        // ── Manual Booking ───────────────────────────────────────────────────────
+        async function prepareBookingTab() {
+            const [docs, depts] = await Promise.all([api('/api/doctors'), api('/api/departments')]);
+            state.doctors = docs;
+            state.depts = depts;
+
+            const deptSelect = document.getElementById('m-dept-select');
+            deptSelect.innerHTML = '<option value="">Select Department</option>' +
+                depts.map(d => `<option value="${d.name}">${d.name.toUpperCase()}</option>`).join('');
+
+            // Set default date to tomorrow
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            document.getElementById('m-date').value = tomorrow.toISOString().split('T')[0];
+        }
+
+        function filterDoctorsForBooking() {
+            const dept = document.getElementById('m-dept-select').value;
+            const docSelect = document.getElementById('m-doctor-select');
+            const filtered = state.doctors.filter(d => d.department_name === dept);
+
+            docSelect.innerHTML = '<option value="">Select Doctor</option>' +
+                filtered.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+
+            document.getElementById('m-slot-select').innerHTML = '';
+        }
+
+        async function fetchBookingSlots() {
+            const doctor = document.getElementById('m-doctor-select').value;
+            const date = document.getElementById('m-date').value;
+            if (!doctor || !date) return;
+
+            const slots = await api(`/api/booking/available-slots?doctor=${doctor}&date_str=${date}`);
+            const slotSelect = document.getElementById('m-slot-select');
+            slotSelect.innerHTML = slots.map(s => `<option value="${s}">${s}</option>`).join('');
+        }
+
+        async function submitManualBooking() {
+            const payload = {
+                patient_name: document.getElementById('m-patient-name').value,
+                patient_phone: document.getElementById('m-patient-phone').value.trim(),
+                reason: document.getElementById('m-reason').value,
+                department: document.getElementById('m-dept-select').value,
+                doctor: document.getElementById('m-doctor-select').value,
+                date: document.getElementById('m-date').value,
+                time: document.getElementById('m-slot-select').value
+            };
+
+            if (!payload.patient_name || !payload.patient_phone || !payload.doctor || !payload.time) {
+                return alert("Please fill all required fields");
+            }
+
+            // Phone Validation (7-15 digits)
+            const phoneDigits = payload.patient_phone.replace(/\D/g, '');
+            if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+                return alert("Invalid phone number! Please enter a 7 to 15 digit number.");
+            }
+
+            try {
+                const res = await api('/api/booking', { method: 'POST', body: JSON.stringify(payload) });
+                if (res.status === 'success') {
+                    alert("Appointment Booked Successfully!");
+                    showTab('overview');
+                } else {
+                    alert("Error: " + (res.detail || "Unknown error"));
+                }
+            } catch (e) {
+                alert("Connection failed");
+            }
+        }
+
+        // ── Departments ──────────────────────────────────────────────────────────
+        async function loadDepts() {
+            const depts = await api('/api/departments');
+            state.depts = depts;
+            const list = document.getElementById('list-depts');
+            list.innerHTML = depts.map(d => `
+            <tr>
+                <td><strong>${d.name.toUpperCase()}</strong></td>
+                <td>${d.description || '-'}</td>
+                <td>
+                    <button class="btn-action" onclick="editDept(${d.id})">Edit</button>
+                    <button class="btn-action btn-danger" onclick="deleteDept(${d.id})">Delete</button>
+                </td>
+            </tr>
+        `).join('');
+        }
+
+        async function handleDeptSubmit() {
+            const name = document.getElementById('dept-name').value;
+            const desc = document.getElementById('dept-desc').value;
+            if (!name) return;
+
+            const method = state.editId ? 'PATCH' : 'POST';
+            const url = state.editId ? `/api/departments/${state.editId}` : '/api/departments';
+
+            await api(url, { method, body: JSON.stringify({ name, description: desc }) });
+            resetForm('dept');
+            loadDepts();
+        }
+
+        async function deleteDept(id) {
+            if (confirm("Deleting a department won't delete doctors, but they will lose their department link. Continue?")) {
+                await api(`/api/departments/${id}`, { method: 'DELETE' });
+                loadDepts();
+            }
+        }
+
+        // ── Doctors ───────────────────────────────────────────────────────────────
+        async function loadDocs() {
+            const [docs, depts] = await Promise.all([api('/api/doctors'), api('/api/departments')]);
+
+            // Update select dropdowns
+            const selects = ['doc-dept-select', 'slot-doc-select'];
+            selects.forEach(id => {
+                const el = document.getElementById(id);
+                if (id === 'doc-dept-select') {
+                    el.innerHTML = depts.map(d => `<option value="${d.name}">${d.name.toUpperCase()}</option>`).join('');
+                } else {
+                    el.innerHTML = docs.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+                }
+            });
+
+            const list = document.getElementById('list-doctors');
+            list.innerHTML = docs.map(d => `
+            <tr>
+                <td><strong>${d.name}</strong></td>
+                <td>${d.department_name.toUpperCase()}</td>
+                <td><span style="color: var(--text-dim)">${d.specialty || '-'}</span></td>
+                <td><span style="color: ${d.is_active ? 'var(--success)' : 'var(--danger)'}">${d.is_active ? 'Active' : 'Inactive'}</span></td>
+                <td>
+                    <button class="btn-action" onclick="editDoc(${d.id})">Edit</button>
+                    <button class="btn-action btn-danger" onclick="deleteDoc(${d.id})">Remove</button>
+                </td>
+            </tr>
+        `).join('');
+        }
+
+        async function handleDocSubmit() {
+            const name = document.getElementById('doc-name').value;
+            const dept = document.getElementById('doc-dept-select').value;
+            const spec = document.getElementById('doc-specialty').value;
+            if (!name || !dept) return;
+
+            const method = state.editId ? 'PATCH' : 'POST';
+            const url = state.editId ? `/api/doctors/${state.editId}` : '/api/doctors';
+
+            await api(url, { method, body: JSON.stringify({ name, department_name: dept, specialty: spec, is_active: true }) });
+            resetForm('doc');
+            loadDocs();
+        }
+
+        async function deleteDoc(id) {
+            if (confirm("Confirm removal of this staff member?")) {
+                await api(`/api/doctors/${id}`, { method: 'DELETE' });
+                loadDocs();
+            }
+        }
+
+        function editDoc(id) {
+            const doc = state.doctors.find(d => d.id === id);
+            if (!doc) return;
+            state.editId = id;
+            document.getElementById('doc-name').value = doc.name;
+            document.getElementById('doc-dept-select').value = doc.department_name;
+            document.getElementById('doc-specialty').value = doc.specialty || '';
+            document.querySelector('#tab-doctors .btn-primary').innerText = "Update Doctor";
+        }
+
+        // ── Slots/Schedules ───────────────────────────────────────────────────────
+        async function loadSlots() {
+            const slots = await api('/api/slots');
+            const list = document.getElementById('list-slots');
+            list.innerHTML = slots.sort((a, b) => a.doctor_name.localeCompare(b.doctor_name)).map(s => `
+            <tr>
+                <td><strong>${s.doctor_name}</strong></td>
+                <td>${s.start_time}</td>
+                <td>${s.end_time}</td>
+                <td>
+                    <button class="btn-action" onclick="editSlot(${s.id})">Edit</button>
+                    <button class="btn-action btn-danger" onclick="deleteSlot(${s.id})">Remove</button>
+                </td>
+            </tr>
+        `).join('');
+        }
+
+        async function addSlot() {
+            const doc = document.getElementById('slot-doc-select').value;
+            const start = document.getElementById('slot-start').value;
+            const end = document.getElementById('slot-end').value;
+            if (!doc) return;
+
+            const method = state.editId ? 'PATCH' : 'POST';
+            const url = state.editId ? `/api/slots/${state.editId}` : '/api/slots';
+
+            await api(url, { method, body: JSON.stringify({ doctor_name: doc, start_time: start, end_time: end }) });
+            resetForm('slot');
+            loadSlots();
+        }
+
+        function editSlot(id) {
+            // We'll need to fetch slots first or rely on them being in state
+            api('/api/slots').then(slots => {
+                const slot = slots.find(s => s.id === id);
+                if (!slot) return;
+                state.editId = id;
+                document.getElementById('slot-doc-select').value = slot.doctor_name;
+
+                // Convert "09:00 AM" back to "09:00" for input type="time"
+                const parseTime = (s) => {
+                    if (!s) return "09:00";
+                    let [time, part] = s.split(' ');
+                    let [h, m] = time.split(':');
+                    if (part === 'PM' && h !== '12') h = parseInt(h) + 12;
+                    if (part === 'AM' && h === '12') h = '00';
+                    return `${String(h).padStart(2, '0')}:${m}`;
+                }
+
+                document.getElementById('slot-start').value = parseTime(slot.start_time);
+                document.getElementById('slot-end').value = parseTime(slot.end_time);
+                document.querySelector('#tab-schedules .btn-primary').innerText = "Update Shift";
+            });
+        }
+
+        async function deleteSlot(id) {
+            await api(`/api/slots/${id}`, { method: 'DELETE' });
+            loadSlots();
+        }
+
+        // ── Overview ──────────────────────────────────────────────────────────────
+        async function loadOverview() {
+            const stats = await api('/api/stats');
+            document.getElementById('stat-total').innerText = stats.total_appointments;
+            document.getElementById('stat-confirmed').innerText = stats.confirmed;
+            document.getElementById('stat-cancelled').innerText = stats.cancelled;
+            document.getElementById('stat-live').innerText = stats.active_calls;
+
+            const appts = await api('/api/appointments');
+            state.appointments = appts; // Store for modal access
+            const list = document.getElementById('overview-appointments');
+            list.innerHTML = appts.slice(0, 10).map(a => `
+            <tr>
+                <td><strong>${a.patient_name}</strong><br><small style="color:var(--text-dim)">${a.patient_phone}</small></td>
+                <td>${a.doctor}<br><small>${a.department.toUpperCase()}</small></td>
+                <td>${a.date}<br>${a.time}</td>
+                <td>
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:flex-start;">
+                        <span style="font-weight:600; color: ${a.status === 'confirmed' ? 'var(--success)' : 'var(--danger)'}">${a.status.toUpperCase()}</span>
+                        ${a.transcript ? `<button class="btn-action" onclick="viewTranscript(${a.id})">View Script</button>` : ''}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+        }
+
+        function viewTranscript(id) {
+            const appt = state.appointments.find(a => a.id === id);
+            if (!appt || !appt.transcript) return;
+            document.getElementById('transcript-body').innerText = appt.transcript;
+            document.getElementById('transcript-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('transcript-modal').classList.remove('active');
+        }
+
+        function resetForm(prefix) {
+            state.editId = null;
+            if (prefix === 'dept') {
+                document.getElementById('dept-name').value = '';
+                document.getElementById('dept-desc').value = '';
+            }
+            if (prefix === 'doc') {
+                document.getElementById('doc-name').value = '';
+                document.getElementById('doc-specialty').value = '';
+                document.querySelector('#tab-doctors .btn-primary').innerText = "Save Doctor";
+            }
+            if (prefix === 'slot') {
+                document.querySelector('#tab-schedules .btn-primary').innerText = "Add Shift";
+            }
+        }
+
+        // Initial load
+        loadOverview();
+        setInterval(loadOverview, 3000); // Pulse overview
+    </script>
+
+</body>
+
+</html>
