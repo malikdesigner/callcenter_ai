@@ -8,6 +8,35 @@ import numpy as np
 from loguru import logger
 from config.settings import settings
 
+# ── Urdu post-transcription corrections ───────────────────────────────────────
+# Common Whisper mishearings specific to Pakistani Urdu phone calls.
+# Add new entries here as you discover them from call logs.
+_UR_CORRECTIONS = {
+    # Appointment variants
+    "اپورٹ": "اپائنٹمنٹ",
+    "اپوائنٹ": "اپائنٹمنٹ",
+    "اپائنٹ": "اپائنٹمنٹ",
+    "پوائنٹمنٹ": "اپائنٹمنٹ",
+    # Mobile/phone
+    "مبائل": "موبائل",
+    "موبائیل": "موبائل",
+    "مبائیل": "موبائل",
+    # Common name mishearings
+    "نابید": "نوید",
+    "نبید": "نوید",
+    "نائبید": "نوید",
+    # Medical terms
+    "کانسی": "کھانسی",
+    "کانسہ": "کھانسی",
+    "بوخار": "بخار",
+    "ہسپتال": "ہسپتال",  # keep normalised form
+}
+
+def _normalize_urdu(text: str) -> str:
+    for wrong, right in _UR_CORRECTIONS.items():
+        text = text.replace(wrong, right)
+    return text
+
 
 class Transcriber:
     def __init__(self):
@@ -51,39 +80,35 @@ class Transcriber:
         if max_val > 1.0:
             audio = audio / max_val
 
-        # Language-specific initial prompts bias Whisper toward medical vocabulary
         lang = language or self._language
-        if lang == "ur":
-            # Urdu medical vocabulary — significantly improves Urdu STT accuracy
-            initial_prompt = (
-                "یہ ایک ہسپتال کی اپائنٹمنٹ بکنگ کال ہے۔ "
-                "الفاظ میں شامل ہیں: اپائنٹمنٹ، ڈاکٹر، شعبہ، مریض، نام، فون نمبر، "
-                "کارڈیالوجی، آرتھوپیڈک، نیورولوجی، جنرل میڈیسن، گائناکالوجی، پیڈیاٹرک، "
-                "بخار، درد، کھانسی، سر درد، پیٹ درد، آنکھ، دانت، ہڈی، دل، "
-                "صبح، دوپہر، شام، تاریخ، وقت، کل، پرسوں۔"
-            )
-        else:
-            initial_prompt = (
-                "This is a hospital appointment booking call. "
-                "Words include: appointment, doctor, department, patient, "
-                "cardiology, orthopedic, pediatric, gynecology, neurology, "
-                "general medicine, ophthalmology, blood test, surgery, fever, "
-                "pain, cough, headache, morning, afternoon, 9 AM, 2 PM, phone number."
-            )
 
         segments, info = self.model.transcribe(
             audio,
-            beam_size=3,           # beam_size=3 gives meaningfully better accuracy vs greedy
-            best_of=3,
+            beam_size=5,
+            best_of=5,
+            temperature=0,           # deterministic — no sampling randomness
             language=lang,
-            initial_prompt=initial_prompt,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
             without_timestamps=True,
-            condition_on_previous_text=False,  # prevents repetition artifacts
+            condition_on_previous_text=False,
+            compression_ratio_threshold=1.9,
+            log_prob_threshold=-0.7,
+            no_speech_threshold=0.8,
         )
 
-        text = " ".join(seg.text for seg in segments).strip()
+        parts = []
+        for seg in segments:
+            t = seg.text.strip()
+            if t and not t.startswith("[") and not t.startswith("("):
+                parts.append(t)
+
+        text = " ".join(parts).strip()
+
+        # Apply language-specific post-processing corrections
+        if lang == "ur" and text:
+            text = _normalize_urdu(text)
+
         logger.debug(f"[STT] transcript='{text}' lang={info.language} prob={info.language_probability:.2f}")
         return text
 

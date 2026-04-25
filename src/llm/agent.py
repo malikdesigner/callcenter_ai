@@ -8,7 +8,6 @@ import re
 from datetime import date, datetime
 from typing import Optional
 
-import ollama
 from loguru import logger
 from sqlmodel import Session, select
 
@@ -18,6 +17,7 @@ from src.appointment.booking import (
     resolve_department,
 )
 from src.appointment.models import Appointment, Doctor, Department, engine
+from src.llm.intent import detect_intent, detect_language_switch, detect_language_preference, detect_symptom_department
 
 # ── Role & Strict Flow ────────────────────────────────────────────────────────
 
@@ -32,9 +32,10 @@ def _build_system_prompt(lang: str = "en") -> str:
         doctors = session.exec(select(Doctor).where(Doctor.is_active == True)).all()
         depts = session.exec(select(Department)).all()
 
+    # Build doctor list with specialty so LLM can match symptoms to the right doctor
     doctor_info = []
     for dept in depts:
-        dept_docs = [d.name for d in doctors if d.department_name == dept.name]
+        dept_docs = [f"{d.name} ({d.specialty})" for d in doctors if d.department_name == dept.name]
         if dept_docs:
             doctor_info.append(f"{dept.name.title()}: " + ", ".join(dept_docs))
     doctor_list_str = " | ".join(doctor_info)
@@ -44,32 +45,91 @@ def _build_system_prompt(lang: str = "en") -> str:
     current_time = datetime.now().strftime("%I:%M %p")
 
     if lang == "ur":
-        return f"""آپ سارہ ہیں — {settings.hospital_name} کی ریسپشنسٹ۔ عام پاکستانی اردو میں بات کریں۔
+        return f"""آپ سارہ ہیں — {settings.hospital_name} کی ریسپشنسٹ۔ آپ ایک تجربہ کار، ہمدرد پاکستانی ریسپشنسٹ ہیں جو فون پر مریضوں سے بالکل قدرتی اردو میں بات کرتی ہیں۔
+
 آج: {today} | وقت: {current_time} | کل: {tomorrow}
-ڈاکٹرز: {doctor_list_str}
+ڈاکٹرز اور ان کی اسپیشلٹی: {doctor_list_str}
 
-ترتیب: نام ← فون نمبر ← تکلیف ← ڈاکٹر/شعبہ ← وقت (صرف دستیاب سلاٹس) ← تصدیق ← بکنگ
-ہر بار صرف ایک سوال۔ جو معلومات مل گئی دوبارہ نہ پوچھیں۔ جواب مختصر رکھیں۔
-action: ask=معلومات چاہیے | confirm=سب تیار، تصدیق لیں | save=تصدیق ہوگئی، بک کریں | end=کال ختم
-صرف JSON آؤٹ پٹ: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
+ترتیب: نام ← موبائل نمبر ← تکلیف (پھر خود ڈاکٹر تجویز کریں) ← تاریخ ← وقت ← تصدیق
 
-    return f"""You are {settings.receptionist_name}, receptionist at {settings.hospital_name}. Speak like a real human on a phone call — warm, brief, natural.
+━━━ سب سے اہم اصول — ڈاکٹر تجویز کریں ━━━
+جب مریض تکلیف بتائے تو:
+١۔ پہلے ہمدردی ظاہر کریں: "افسوس ہوا سن کر۔" / "سمجھ سکتی ہوں یہ تکلیف دہ ہے۔"
+٢۔ پھر براہِ راست ڈاکٹر کا نام تجویز کریں — شعبہ مت پوچھیں:
+   ✓ "آپ کی [تکلیف] کے لیے ڈاکٹر [نام] بہترین رہیں گے۔ کیا میں ان سے اپائنٹمنٹ بک کروں؟"
+   ✗ "آپ کونسے شعبے میں جانا چاہتے ہیں؟" ← یہ کبھی نہ پوچھیں
+٣۔ اگر LIVE CONTEXT میں RECOMMEND_DOCTOR لکھا ہو تو وہی ڈاکٹر تجویز کریں۔
+
+━━━ زبان کے اصول ━━━
+• عام، روزمرہ کی پاکستانی اردو — مشکل یا ادبی الفاظ نہیں
+  ✓ "کیا تکلیف ہے؟"  ✗ "کیا علالت ہے؟"
+  ✓ "ڈاکٹر سے ملنا ہے"  ✗ "معالج سے رجوع کرنا"
+• "آپ" سے مخاطب ہوں — "تم" یا "تو" نہیں
+• ہر موڑ پر صرف ایک سوال — پہلے مریض کی بات تسلیم کریں، پھر سوال
+• ایک ہی جملہ دوبارہ نہ دہرائیں، ہر بار مختلف انداز
+
+━━━ ہمدردی کے جملے (تکلیف سن کر) ━━━
+"افسوس ہوا سن کر۔" / "پریشان نہ ہوں، ہم مدد کریں گے۔" / "ٹھیک ہو جائیں گے، ان شاء اللہ۔"
+
+━━━ مشکل حالات ━━━
+• "سمجھا نہیں" / "کیا کہا؟":  سادہ الفاظ میں دہرائیں، معافی نہ مانگیں
+• غیر متعلق سوال:  "میں اپائنٹمنٹ کے لیے مدد کر سکتی ہوں۔ [اگلا سوال]؟"
+• 2 بار سمجھ نہ آئے:  "کیا بخار ہے، درد ہے، یا کوئی اور مسئلہ؟"
+
+━━━ رموزِ اوقاف (لازمی) ━━━
+صرف اردو علامات: ، ۔ ؟ — (انگریزی . , ? ہرگز نہ لکھیں)
+
+━━━ مثالی گفتگو ━━━
+نام:      "آپ کا نام کیا ہے؟" / "اپنا نام بتائیں۔"
+فون:      "موبائل نمبر دیں۔" / "رابطہ نمبر کیا ہے؟"
+تکلیف:   "آپ کو کیا تکلیف ہے؟"
+ڈاکٹر:   "آپ کی [تکلیف] کے لیے ڈاکٹر [نام] بہترین ہیں — کیا ان سے وقت لوں؟"
+تاریخ:   "کس دن آنا ہے؟ کل یا کوئی اور دن؟"
+وقت:     "یہ اوقات دستیاب ہیں: [سلاٹس]۔ کون سا ٹھیک رہے گا؟"
+تصدیق:  "[نام] صاحب/صاحبہ، ڈاکٹر [نام] کے ساتھ [تاریخ] کو [وقت] پر — ٹھیک ہے؟"
+اختتام:  "کوئی اور بات؟" / "اللہ حافظ، جلد صحت یابی کی دعا ہے۔"
+
+━━━ action ━━━
+ask=مزید معلومات | confirm=سب مل گیا، تفصیل پڑھ کر تصدیق لیں | save=تصدیق ہوئی، بک کریں | end=صرف بکنگ کے بعد
+
+صرف JSON: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
+
+    return f"""You are {settings.receptionist_name}, receptionist at {settings.hospital_name}. Warm, professional, human — never robotic.
 Today: {today} | Time: {current_time} | Tomorrow: {tomorrow}
-Doctors: {doctor_list_str}
+Doctors & specialties: {doctor_list_str}
 
-Flow: name → phone → problem → doctor/dept → time (only from available slots) → confirm → book
-One question per turn. Never re-ask info already given. Keep responses short.
-action: ask=need info | confirm=all ready, read back & confirm | save=user confirmed, book it | end=call over
+Flow: name → phone → symptoms → (YOU recommend specific doctor) → date → time → confirm → book
+
+Rules:
+1. When patient describes symptoms — show empathy first ("I'm sorry to hear that"), then recommend a SPECIFIC DOCTOR by name. NEVER ask "which department do you want?" — you pick the right doctor based on their symptoms.
+   ✓ "For your head pain, I'd recommend Dr. Kamran Baig, our neurologist. Shall I book with him?"
+   ✗ "Which department would you like to visit?"
+2. If LIVE CONTEXT shows RECOMMEND_DOCTOR — use exactly that doctor.
+3. One question per turn. Acknowledge what was said before asking next.
+4. Never repeat the same phrase. Vary wording naturally.
+5. action="end" ONLY after booking is done and patient says goodbye.
+
+action: ask=need info | confirm=all ready, read back & confirm | save=patient confirmed, book it | end=ONLY after booking + goodbye
 JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
 
 # ── Agent class ────────────────────────────────────────────────────────────────
 
 class HospitalAgent:
     def __init__(self, language: str = "en"):
-        self.language = language
+        # "bi" mode = start by asking user which language they prefer
+        self._bilingual_mode: bool = (language == "bi")
+        self.language: str = "en" if self._bilingual_mode else language
+        self._language_chosen: bool = not self._bilingual_mode
+
         self.booking = BookingSystem()
         self._history: list = []
         self._collected: dict = {}
+        # State machine
+        self._flow_state: str = "greeting"
+        self._awaiting_confirmation: bool = False
+        # Robustness tracking
+        self._consecutive_failures: int = 0
+        self._last_asked_state: str = ""
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -77,8 +137,24 @@ class HospitalAgent:
         """Reset state for a new call."""
         self._history = []
         self._collected = {}
+        self._flow_state = "greeting"
+        self._awaiting_confirmation = False
+        self._consecutive_failures = 0
+        self._last_asked_state = ""
+        if self._bilingual_mode:
+            self.language = "en"
+            self._language_chosen = False
 
     async def get_greeting(self) -> str:
+        if self._bilingual_mode and not self._language_chosen:
+            hour = datetime.now().hour
+            time_greet = "Good morning" if hour < 12 else "Good afternoon" if hour < 17 else "Good evening"
+            return (
+                f"{time_greet}! Welcome to {settings.hospital_name}. "
+                f"I'm {settings.receptionist_name}, your receptionist. "
+                f"Would you like to continue in English or Urdu?"
+            )
+
         prompt = "A new caller just connected. Greet them naturally like a real receptionist — brief and warm."
         if self.language == "ur":
             prompt = "نیا کال آیا ہے۔ عام پاکستانی ریسپشنسٹ کی طرح مختصر اور دوستانہ انداز میں سلام کریں اور نام پوچھیں۔"
@@ -86,7 +162,7 @@ class HospitalAgent:
 
         fallback_en = f"Thank you for calling {settings.hospital_name}, this is {settings.receptionist_name}. How can I help you?"
         fallback_ur = f"السلام علیکم، {settings.hospital_name} میں خوش آمدید! میں سارہ بول رہی ہوں۔ آپ کا نام کیا ہے؟"
-        
+
         return result.get("speech", fallback_en if self.language == "en" else fallback_ur)
 
     async def process_turn(self, user_text: str) -> dict:
@@ -120,6 +196,71 @@ class HospitalAgent:
         full_json_str = ""
         last_yielded_speech_idx = 0
         speech_buffer = ""
+
+        # ── Bilingual mode: first turn is language selection ──────────────
+        if self._bilingual_mode and not self._language_chosen:
+            pref = detect_language_preference(user_text)
+            if pref == "ur":
+                self.language = "ur"
+                self._language_chosen = True
+                logger.info("[Agent] Bilingual: user chose Urdu")
+                speech = f"بہت اچھا! میں اردو میں بات کروں گی۔ آپ کا نام کیا ہے؟"
+            elif pref == "en":
+                self.language = "en"
+                self._language_chosen = True
+                logger.info("[Agent] Bilingual: user chose English")
+                speech = f"Great! I'll continue in English. May I have your name please?"
+            else:
+                speech = "Sorry, I didn't catch that. Please say 'English' or 'Urdu' / براہ کرم کہیں 'Urdu' یا 'English'۔"
+                logger.info("[Agent] Bilingual: language preference unclear, re-asking")
+            yield speech
+            self._history.append({"role": "user", "content": user_text})
+            self._history.append({"role": "assistant", "content": speech})
+            yield {"speech": speech, "action": "ask", "data": {}}
+            return
+
+        # ── Language auto-detection & switching ───────────────────────────
+        detected_lang = detect_language_switch(user_text)
+        if detected_lang and detected_lang != self.language:
+            self.language = detected_lang
+            logger.info(f"[Agent] Language switched to '{self.language}'")
+
+        # ── Symptom → department pre-fill (no LLM needed) ────────────────
+        if "department" not in self._collected or not self._collected["department"]:
+            dept = detect_symptom_department(user_text)
+            if dept:
+                self._collected["department"] = dept
+                logger.info(f"[Agent] Symptom keyword → department='{dept}'")
+
+        # ── Intent detection ──────────────────────────────────────────────
+        intent = detect_intent(user_text, self._flow_state, self.language)
+        logger.debug(f"[Agent] Intent={intent} | State={self._flow_state} | Awaiting={self._awaiting_confirmation}")
+
+        # ── Failure tracking ──────────────────────────────────────────────
+        if intent == "unclear" or len(user_text.strip()) < 2:
+            self._consecutive_failures += 1
+        else:
+            self._consecutive_failures = 0
+
+        # ── Confirmation gate: if we are waiting for user's yes/no ────────
+        if self._awaiting_confirmation:
+            if intent == "confirm":
+                # User said yes → book without calling LLM again
+                logger.info("[Agent] Confirmation received — executing booking directly")
+                result = self._execute_booking({"speech": "", "action": "save", "data": {}})
+                self._awaiting_confirmation = False
+                self._flow_state = "post_booking"
+                self._history.append({"role": "user", "content": user_text})
+                self._history.append({"role": "assistant", "content": result.get("speech", "")})
+                yield result
+                return
+            elif intent == "deny":
+                # User said no → clear last confirmed data and re-ask
+                logger.info("[Agent] Denial received — resetting confirmation state")
+                self._awaiting_confirmation = False
+                self._collected.pop("appointment_time", None)
+                self._collected.pop("appointment_date", None)
+                # Fall through so LLM generates a helpful "What would you like to change?" response
 
         # ── Correction detection ──────────────────────────────────────────
         # If the user is correcting a previously collected field, clear it so
@@ -173,7 +314,8 @@ class HospitalAgent:
                     last_yielded_speech_idx += len(new_symbols)
                     
                     # Look for sentence boundaries in our buffer
-                    sentences = re.split(r'(?<=[.!?])\s+', speech_buffer)
+                    # Includes Urdu full stop ۔ (U+06D4) and Urdu ? ؟ (U+061F)
+                    sentences = re.split(r'(?<=[.!?۔؟])\s+', speech_buffer)
                     if len(sentences) > 1:
                         # Yield all complete sentences
                         for s in sentences[:-1]:
@@ -212,26 +354,59 @@ class HospitalAgent:
         # GATEKEEPER: Prevent save/confirm if critical info missing or invalid
         if action in ["save", "confirm"] and missing:
             logger.warning(f"[Agent] Blocking {action} due to missing/invalid fields: {missing}")
-            labels = [f.replace('patient_', '').replace('_', ' ') for f in missing]
-            if self.language == "ur":
-                result["speech"] = f"بکنگ کے لیے ابھی {' اور '.join(labels)} درکار ہے۔ کیا آپ یہ بتا سکتے ہیں؟"
+            # Phone-specific error messages take priority
+            if "_phone_too_short" in missing:
+                phone_val = self._collected.get("patient_phone", "")
+                self._collected.pop("patient_phone", None)  # force re-collect
+                if self.language == "ur":
+                    result["speech"] = f"'{phone_val}' نمبر بہت چھوٹا لگ رہا ہے۔ براہ کرم پورا موبائل نمبر دوبارہ بتائیں — کم از کم 10 ہندسے ہونے چاہیے۔"
+                else:
+                    result["speech"] = f"That number doesn't look right — it's too short. Please give me your full phone number (at least 10 digits)."
+            elif "_phone_too_long" in missing:
+                phone_val = self._collected.get("patient_phone", "")
+                self._collected.pop("patient_phone", None)
+                if self.language == "ur":
+                    result["speech"] = f"'{phone_val}' نمبر بہت لمبا لگ رہا ہے۔ براہ کرم صحیح موبائل نمبر بتائیں۔"
+                else:
+                    result["speech"] = f"That number seems too long. Could you double-check and give me your correct phone number?"
             else:
-                result["speech"] = f"I still need {', and '.join(labels)} before I can book. Could you provide that?"
+                real_missing = [f for f in missing if not f.startswith("_")]
+                labels = [f.replace('patient_', '').replace('_', ' ') for f in real_missing]
+                if self.language == "ur":
+                    result["speech"] = f"بکنگ کے لیے ابھی {' اور '.join(labels)} درکار ہے۔ کیا آپ یہ بتا سکتے ہیں؟"
+                else:
+                    result["speech"] = f"I still need {', and '.join(labels)} before I can book. Could you provide that?"
             action = "ask"
             result["action"] = "ask"
 
         if action == "save":
             logger.info(f"[Agent] Executing booking — collected: {self._collected}")
             result = self._execute_booking(result)
+            self._awaiting_confirmation = False
+            self._flow_state = "post_booking"
         elif action == "confirm" and not missing:
-            # User confirmed — proceed to book immediately
-            logger.info(f"[Agent] Confirm→save — collected: {self._collected}")
-            result = self._execute_booking(result)
+            if self._flow_state == "post_booking":
+                # Booking is already done — LLM is spuriously re-reading details.
+                # Treat it as a normal post-booking reply instead.
+                logger.warning("[Agent] Blocking re-confirmation in post_booking state → converting to ask")
+                result["action"] = "ask"
+            else:
+                logger.info("[Agent] All info ready — waiting for user confirmation")
+                self._awaiting_confirmation = True
+                self._flow_state = "confirm_booking"
         elif action == "end":
-            result["action"] = "end"
-        elif action == "confirm":
-            # Still confirming but missing info — already handled by gatekeeper above
-            pass
+            # Only allow ending the call after booking is complete
+            if self._flow_state == "post_booking":
+                result["action"] = "end"
+                self._flow_state = "done"
+            else:
+                # LLM tried to end mid-conversation — block it and keep collecting
+                logger.warning("[Agent] Blocking premature 'end' — booking not complete, converting to 'ask'")
+                result["action"] = "ask"
+                self._flow_state = self._compute_flow_state()
+        else:
+            # action == "ask" or similar — update flow state based on what's still missing
+            self._flow_state = self._compute_flow_state()
 
         # Update history — keep last 8 turns (16 messages) to save tokens
         self._history.append({"role": "user", "content": user_text})
@@ -254,10 +429,12 @@ class HospitalAgent:
             (9, 0): "09:00 AM",  (9, 30): "09:30 AM",
             (10, 0): "10:00 AM", (10, 30): "10:30 AM",
             (11, 0): "11:00 AM", (11, 30): "11:30 AM",
-            (12, 0): "12:00 PM",
+            (12, 0): "12:00 PM", (12, 30): "12:30 PM",
+            (13, 0): "01:00 PM", (13, 30): "01:30 PM",
             (14, 0): "02:00 PM", (14, 30): "02:30 PM",
             (15, 0): "03:00 PM", (15, 30): "03:30 PM",
             (16, 0): "04:00 PM", (16, 30): "04:30 PM",
+            (17, 0): "05:00 PM", (17, 30): "05:30 PM",
         }
         _VALID_SLOTS = set(_TIME_MAP.values())
 
@@ -346,9 +523,12 @@ class HospitalAgent:
             from datetime import date, timedelta
             today = date.today()
             d = raw_date.lower().strip()
-            if d in ("tomorrow", "next day"):
+            # English shortcuts
+            if d in ("today", "آج"):
+                self._collected["appointment_date"] = today.isoformat()
+            elif d in ("tomorrow", "next day", "کل"):
                 self._collected["appointment_date"] = (today + timedelta(days=1)).isoformat()
-            elif d in ("day after tomorrow", "day after"):
+            elif d in ("day after tomorrow", "day after", "پرسوں", "پرسو"):
                 self._collected["appointment_date"] = (today + timedelta(days=2)).isoformat()
             # Already YYYY-MM-DD — leave as-is
 
@@ -383,13 +563,37 @@ class HospitalAgent:
             val = self._collected.get(field, "")
             if not val or val.lower() in PLACEHOLDERS:
                 missing.append(field)
-            
-            # Specific validation for Phone
-            if field == "patient_phone" and val:
+                continue
+
+            # Phone: Pakistani numbers are 10–13 digits (local/country-code formats)
+            if field == "patient_phone":
                 clean = "".join(filter(str.isdigit, val))
-                if not (7 <= len(clean) <= 15):
-                    missing.append("a valid phone number (7-15 digits)")
+                if len(clean) < 10:
+                    missing.append("_phone_too_short")
+                elif len(clean) > 13:
+                    missing.append("_phone_too_long")
         return missing
+
+    def _compute_flow_state(self) -> str:
+        """Helper to determine the current state based on what's missing."""
+        missing = self._get_missing_requirements()
+        if not missing:
+            return "confirm_booking"
+
+        # Determine logical next step based on what's missing
+        if "patient_name" in missing:
+            return "collect_name"
+        if "patient_phone" in missing or "_phone_too_short" in missing or "_phone_too_long" in missing:
+            return "collect_phone"
+        if "department" in missing and "doctor_name" in missing:
+            return "ask_information" # wait, does "collect_department" exist in intent.py? intent.py supports provide_name, provide_phone, describe_symptoms, choose_date, choose_time. So flow_state can be 'collect_name' to help intent.py.
+        if "doctor_name" in missing:
+            return "ask_information"
+        if "appointment_date" in missing:
+            return "collect_date"
+        if "appointment_time" in missing:
+            return "collect_time"
+        return "ask_information"
 
     def _build_context_injection(self) -> str:
         """
@@ -401,6 +605,23 @@ class HospitalAgent:
         from datetime import date as _date
         lines = []
 
+        # Post-booking state: appointment is confirmed, handle follow-up questions
+        if self._flow_state == "post_booking":
+            appt_id = self._collected.get("appointment_id", "")
+            if self.language == "ur":
+                lines.append(
+                    f"BOOKING_COMPLETE: اپائنٹمنٹ #{appt_id} کنفرم ہو چکا ہے۔ "
+                    f"مریض کے کسی بھی سوال کا جواب دیں۔ "
+                    f"جب مریض کہے 'شکریہ'، 'اللہ حافظ'، 'ٹھیک ہے'، یا 'بس' تو action='end' سیٹ کریں۔"
+                )
+            else:
+                lines.append(
+                    f"BOOKING_COMPLETE: Appointment #{appt_id} is confirmed. "
+                    f"Answer any follow-up questions the patient has. "
+                    f"When the patient says goodbye, thanks, or indicates they are done, set action='end'."
+                )
+            return "\n\n".join(lines)
+
         if self._collected:
             lines.append(f"CURRENT_STATE: {json.dumps(self._collected)}")
 
@@ -409,13 +630,37 @@ class HospitalAgent:
             lines.append(f"MISSING_FOLLOWING_INFO: {', '.join(missing)}")
             if self.language == "ur":
                 lines.append("STRICT RULE: آگے بڑھنے سے پہلے 'نام' اور 'فون نمبر' حاصل کرنا لازمی ہے۔")
+                lines.append("STRICT RULE: مریض کی بات کا جواب دیں اور پھر الگ انداز میں وہ معلومات طلب کریں جو باقی ہیں۔ ایک ہی جملہ نہ دہرائیں۔")
             else:
                 lines.append("STRICT RULE: You MUST collect Name and Phone before Confirm/Save.")
+                lines.append("STRICT RULE: Acknowledge the user's statement and ask for the missing information in a varied, non-repetitive way.")
         else:
             if self.language == "ur":
                 lines.append("ALL_INFO_COLLECTED: تمام معلومات مل گئی ہیں۔ تصدیق کی طرف بڑھیں۔")
             else:
                 lines.append("ALL_INFO_COLLECTED: All info collected — proceed to Confirmation.")
+
+        # ── Repetition guard ──────────────────────────────────────────────────
+        if self._last_asked_state and self._last_asked_state == self._flow_state:
+            if self.language == "ur":
+                lines.append("REPHRASE: آپ نے یہ سوال پہلے بھی پوچھا ہے۔ اسے بالکل مختلف، سادہ الفاظ میں پوچھیں۔")
+            else:
+                lines.append("REPHRASE: You already asked this. Ask it differently — simpler words.")
+        self._last_asked_state = self._flow_state
+
+        # ── Failure counter hint ──────────────────────────────────────────────
+        if self._consecutive_failures >= 2:
+            if self.language == "ur":
+                lines.append(
+                    f"USER_STRUGGLING ({self._consecutive_failures} بار): مریض کو سمجھنے میں مشکل ہو رہی ہے۔ "
+                    "سوال بہت مختصر اور سادہ کریں۔ "
+                    "اگر مسئلہ سمجھ نہ آئے تو آپشن دیں: 'بخار ہے؟ درد ہے؟ یا کوئی اور تکلیف؟'"
+                )
+            else:
+                lines.append(
+                    f"USER_STRUGGLING ({self._consecutive_failures} turns): Simplify drastically. "
+                    "Offer a multiple-choice if stuck: 'Is it fever, pain, or something else?'"
+                )
 
         doctor = self._collected.get("doctor_name", "")
         dept = self._collected.get("department", "")
@@ -452,6 +697,33 @@ class HospitalAgent:
 
         # ── Case 2: Only department known → show next available ───────────────
         elif dept:
+            # Inject RECOMMEND_DOCTOR when doctor not yet chosen
+            if not doctor:
+                try:
+                    with Session(engine) as session:
+                        dept_docs = session.exec(
+                            select(Doctor).where(
+                                Doctor.department_name == dept,
+                                Doctor.is_active == True,
+                            )
+                        ).all()
+                    if dept_docs:
+                        doc_names = ", ".join(f"{d.name} ({d.specialty})" for d in dept_docs)
+                        if self.language == "ur":
+                            lines.append(
+                                f"RECOMMEND_DOCTOR: {dept} شعبے میں یہ ڈاکٹرز ہیں: {doc_names}۔ "
+                                f"مریض کی تکلیف کے مطابق ایک ڈاکٹر کا نام خود تجویز کریں — "
+                                f"'کونسے شعبے میں جانا ہے؟' ہرگز نہ پوچھیں۔"
+                            )
+                        else:
+                            lines.append(
+                                f"RECOMMEND_DOCTOR: Doctors in {dept}: {doc_names}. "
+                                f"Pick the best match for the patient's symptoms and recommend them by name. "
+                                f"Do NOT ask 'which department do you want?'"
+                            )
+                except Exception as e:
+                    logger.warning(f"[Agent] RECOMMEND_DOCTOR lookup failed: {e}")
+
             availability = self.booking.get_next_available(dept, days_ahead=5)
             if availability:
                 av_lines = []
@@ -521,43 +793,12 @@ class HospitalAgent:
         from openai import AsyncOpenAI
 
         # ── Build provider list in priority order ──────────────────────────
+        # Each key in .env enables the matching provider.
+        # Priority: Gemini → HuggingFace/hf-inference → Ollama (local).
         providers = []
 
-        # 1. Gemini (primary — best Urdu quality, free via AI Studio)
-        if settings.gemini_api_key:
-            providers.append((
-                AsyncOpenAI(
-                    api_key=settings.gemini_api_key,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                ),
-                settings.gemini_model,
-                "Gemini",
-                False,  # Gemini does not support json_object format
-            ))
-
-        # 2. Groq (secondary — very fast, free tier)
-        if settings.groq_api_key:
-            providers.append((
-                AsyncOpenAI(
-                    api_key=settings.groq_api_key,
-                    base_url="https://api.groq.com/openai/v1",
-                ),
-                settings.groq_model,
-                "Groq",
-                True,
-            ))
-
-        # 3. HuggingFace (tertiary cloud fallback)
-        if settings.hugging_face_token:
-            providers.append((
-                AsyncOpenAI(
-                    api_key=settings.hugging_face_token,
-                    base_url="https://router.huggingface.co/hf-inference/v1/",
-                ),
-                settings.huggingface_model,
-                "HuggingFace",
-                False,  # Qwen does not support json_object format
-            ))
+        # HuggingFace free inference is disabled — their endpoint format and model
+        # availability changes too frequently to be reliable. Use Ollama instead.
 
         # ── Try cloud providers first ──────────────────────────────────────
         for client, model_name, provider_name, use_json_format in providers:
@@ -584,26 +825,69 @@ class HospitalAgent:
                 else:
                     logger.error(f"[LLM] {provider_name} failed: {e}. Trying next.")
 
-        # ── 4. Ollama (local fallback) ─────────────────────────────────────
-        logger.info(f"[LLM] Trying Ollama → {settings.ollama_model}")
+        # ── 4. Ollama (local) — auto-detect installed models ──────────────
+        from ollama import AsyncClient
+        ollama_options = {"temperature": 0.2, "num_predict": 350, "num_ctx": 2048}
+        if settings.ollama_num_gpu >= 0:
+            ollama_options["num_gpu"] = settings.ollama_num_gpu
+
+        client = AsyncClient(host=settings.ollama_host)
+
+        # Query which models are actually installed to avoid wasting time on missing ones
         try:
-            from ollama import AsyncClient
-            ollama_options = {"temperature": 0.2, "num_predict": 350, "num_ctx": 1024}
-            if settings.ollama_num_gpu >= 0:
-                ollama_options["num_gpu"] = settings.ollama_num_gpu
-            async for chunk in await AsyncClient(host=settings.ollama_host).chat(
-                model=settings.ollama_model,
-                messages=messages,
-                format="json",
-                options=ollama_options,
-                stream=True,
-            ):
-                delta = chunk.get("message", {}).get("content", "")
-                if delta:
-                    yield delta
-            return  # success
-        except Exception as e:
-            logger.error(f"[LLM] Ollama failed: {e}.")
+            installed_info = await client.list()
+            installed_names = [m["model"] for m in installed_info.get("models", [])]
+            logger.info(f"[LLM] Installed Ollama models: {installed_names}")
+        except Exception:
+            installed_names = []  # Ollama not running — will fail at chat stage
+
+        # Build candidate list: configured model first, then any installed model as fallback
+        candidates = []
+        if not installed_names or settings.ollama_model in installed_names:
+            candidates.append(settings.ollama_model)
+        # Add any other installed model as emergency fallback
+        for name in installed_names:
+            if name not in candidates:
+                candidates.append(name)
+
+        if not candidates:
+            candidates = [settings.ollama_model]  # last-resort attempt
+
+        for ollama_model in candidates:
+            logger.info(f"[LLM] Trying Ollama → {ollama_model}")
+            try:
+                async for chunk in await client.chat(
+                    model=ollama_model,
+                    messages=messages,
+                    format="json",
+                    options=ollama_options,
+                    stream=True,
+                ):
+                    delta = chunk.get("message", {}).get("content", "")
+                    if delta:
+                        yield delta
+                return  # success
+            except Exception as e:
+                err_str = str(e).lower()
+                logger.error(f"[LLM] Ollama/{ollama_model} failed: {e}.")
+                # VRAM exhausted — retry the same model on CPU (slow but functional)
+                if "resource limitations" in err_str or "out of memory" in err_str:
+                    logger.warning(f"[LLM] Ollama/{ollama_model} VRAM error — retrying on CPU (slow)")
+                    try:
+                        cpu_opts = {**ollama_options, "num_gpu": 0}
+                        async for chunk in await client.chat(
+                            model=ollama_model,
+                            messages=messages,
+                            format="json",
+                            options=cpu_opts,
+                            stream=True,
+                        ):
+                            delta = chunk.get("message", {}).get("content", "")
+                            if delta:
+                                yield delta
+                        return  # success on CPU
+                    except Exception as e2:
+                        logger.error(f"[LLM] Ollama/{ollama_model} CPU fallback failed: {e2}.")
 
         # ── 5. All providers failed ────────────────────────────────────────
         logger.error("[LLM] All providers failed.")
@@ -642,7 +926,8 @@ class HospitalAgent:
                     f"{appt.patient_name} صاحب، {appt.doctor_name} کے ساتھ "
                     f"{appt.appointment_date.strftime('%d %B')} کو "
                     f"{appt.appointment_time} پر ملاقات بک ہو گئی ہے۔ "
-                    f"بکنگ نمبر #{appt.id} ہے۔ اللہ حافظ!"
+                    f"بکنگ نمبر #{appt.id} ہے۔ "
+                    f"کیا آپ کو کچھ اور معلومات چاہیے؟"
                 )
             else:
                 result["speech"] = (
@@ -653,7 +938,7 @@ class HospitalAgent:
                     f"Your booking reference is #{appt.id}. "
                     f"Is there anything else I can help you with?"
                 )
-            result["action"] = "end"
+            result["action"] = "ask"
             result["data"]["appointment_id"] = appt.id
 
         except ValueError as e:

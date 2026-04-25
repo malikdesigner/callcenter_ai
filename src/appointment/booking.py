@@ -216,10 +216,10 @@ class BookingSystem:
         if patient_name.lower() in placeholders or len(patient_name) < 2:
             raise ValueError(f"Invalid patient name provided: '{patient_name}'")
         
-        # Phone Validation (already partially implemented, but strengthening here)
+        # Phone: 10–13 digits covers local (03XX-XXXXXXX=11) and country-code (923XX-XXXXXXX=12)
         clean_phone = "".join(filter(str.isdigit, patient_phone))
-        if not (7 <= len(clean_phone) <= 15) or patient_phone.lower() in placeholders:
-             raise ValueError(f"Invalid phone number provided: '{patient_phone}'")
+        if not (10 <= len(clean_phone) <= 13) or patient_phone.lower() in placeholders:
+            raise ValueError(f"Invalid phone number: '{patient_phone}' ({len(clean_phone)} digits — expected 10–13)")
 
         available = self.get_available_slots(doctor_name, appointment_date)
         if appointment_time not in available:

@@ -6,12 +6,15 @@ Each CallHandler instance manages one active call session.
 
 import asyncio
 import re
+import threading
 import time
 from collections import deque
 from typing import Optional
 
 import numpy as np
 from loguru import logger
+
+_load_lock = threading.Lock()
 
 
 def _sanitize_for_tts(text: str) -> str:
@@ -58,18 +61,18 @@ class CallHandler:
 
     @classmethod
     def load_models(cls):
-        """Pre-load all models at startup. Safe to call from multiple apps — loads only once."""
-        if cls._models_loaded:
-            logger.info("All models ready.")
-            return
-        if cls._vad is None:
-            cls._vad = VADDetector()
-        if cls._stt is None:
-            cls._stt = Transcriber()
-        if cls._tts is None:
-            cls._tts = VoiceSynthesizer()
-            cls._tts.load()
-        cls._models_loaded = True  # only set True after all models loaded successfully
+        """Pre-load all models. Thread-safe — both server startups call this; only the first one loads."""
+        with _load_lock:
+            if cls._models_loaded:
+                return
+            if cls._vad is None:
+                cls._vad = VADDetector()
+            if cls._stt is None:
+                cls._stt = Transcriber()
+            if cls._tts is None:
+                cls._tts = VoiceSynthesizer()
+                cls._tts.load()
+            cls._models_loaded = True
         logger.info("All models ready.")
 
     # ── Instance ──────────────────────────────────────────────────────────────
@@ -83,7 +86,12 @@ class CallHandler:
         self._speech_buffer: list = []
         self._last_speech_ts: Optional[float] = None
         self._is_active = False
-        self._processing = False   # prevent overlapping STT/LLM calls
+        self._processing = False
+
+        # Rolling pre-speech buffer: captures ~300ms before VAD fires
+        # so the first syllable of a word is never clipped
+        _pre_buf_frames = int(settings.sample_rate * 0.3)
+        self._pre_buffer: deque = deque(maxlen=_pre_buf_frames)
 
         # Silence gate: how long of silence triggers processing
         self._silence_gate = settings.silence_duration
@@ -104,7 +112,7 @@ class CallHandler:
 
         self.agent.reset()
         self.__class__.load_models()
-        self._tts.set_language(self.language)
+        self._tts.set_language(self.agent.language)  # use agent.language — 'bi' mode starts as 'en'
         self._is_active = True
         self._speech_buffer = []
         self._last_speech_ts = None
@@ -129,7 +137,8 @@ class CallHandler:
 
         # Synthesize sentence-by-sentence and stream immediately
         greeting = _sanitize_for_tts(greeting)
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', greeting) if s.strip()]
+        # Includes Urdu full stop ۔ (U+06D4) and Urdu ? ؟ (U+061F)
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?۔؟])\s+', greeting) if s.strip()]
         full_audio = b""
         for sentence in sentences:
             audio = await self._tts.synthesize(sentence)
@@ -137,18 +146,47 @@ class CallHandler:
                 full_audio += audio
                 yield ("audio", audio)
 
-        # Cache for next call
-        if full_audio:
+        # Cache for next call — skip if this is a fallback error message
+        _ERROR_SIGNALS = ["تکنیکی مسئلہ", "technical issue", "having trouble", "brief technical"]
+        is_error_greeting = any(sig in greeting for sig in _ERROR_SIGNALS)
+        if full_audio and not is_error_greeting:
             with open(cache_path, "wb") as f:
                 f.write(full_audio)
             logger.info(f"[{self.session_id}] Greeting cached")
+        elif is_error_greeting:
+            logger.warning(f"[{self.session_id}] Skipping cache — greeting is a fallback error message")
 
     async def end_call(self):
         self._is_active = False
+        self._save_call_log()
         self._speech_buffer = []
         self._processing = False
         self._vad.reset()
         logger.info(f"[{self.session_id}] Call ended.")
+
+    def _save_call_log(self):
+        import json
+        import os
+        from datetime import datetime
+
+        try:
+            log_dir = "data/call_logs"
+            os.makedirs(log_dir, exist_ok=True)
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            log_path = os.path.join(log_dir, f"{date_str}_{self.session_id}.json")
+            log_data = {
+                "session_id": self.session_id,
+                "language": self.language,
+                "timestamp": datetime.now().isoformat(),
+                "transcript": self.agent.get_transcript(),
+                "collected": self.agent._collected,
+                "flow_state": self.agent._flow_state,
+            }
+            with open(log_path, "w", encoding="utf-8") as f:
+                json.dump(log_data, f, ensure_ascii=False, indent=2)
+            logger.info(f"[{self.session_id}] Call log saved → {log_path}")
+        except Exception as e:
+            logger.warning(f"[{self.session_id}] Could not save call log: {e}")
 
     # ── Audio ingestion ───────────────────────────────────────────────────────
 
@@ -167,11 +205,17 @@ class CallHandler:
         is_speech = self._vad.is_speech(audio)
 
         if is_speech:
+            if not self._speech_buffer:
+                # Prepend pre-buffer so the start of the word isn't clipped
+                self._speech_buffer.extend(list(self._pre_buffer))
             self._speech_buffer.extend(audio.tolist())
             self._last_speech_ts = time.time()
             return
 
-        # No speech in this chunk — check for end-of-turn
+        # No speech — keep pre-buffer rolling so next speech turn has context
+        self._pre_buffer.extend(audio.tolist())
+
+        # Check for end-of-turn
         if self._last_speech_ts and self._speech_buffer:
             # Only trigger if we have a significant amount of speech (at least 0.3s)
             # to avoid triggering on clicks or background coughs
@@ -203,10 +247,13 @@ class CallHandler:
         self._last_speech_ts = None
 
         try:
+            # Sync TTS to agent's current language (handles mid-call language switches)
+            self._tts.set_language(self.agent.language)
+
             # 1. Speech → Text  (GPU, runs in thread pool to not block event loop)
             loop = asyncio.get_event_loop()
             transcript = await loop.run_in_executor(
-                None, lambda: self._stt.transcribe(audio_array, language=self.language)
+                None, lambda: self._stt.transcribe(audio_array, language=self.agent.language)
             )
             logger.info(f"[{self.session_id}] User: {transcript}")
 
@@ -244,9 +291,12 @@ class CallHandler:
 
         except Exception as e:
             logger.exception(f"[{self.session_id}] Turn error: {e}")
-            fallback = await self._tts.synthesize(
-                "I'm sorry, I'm having a technical issue. Could you please repeat?"
+            fallback_text = (
+                "معذرت، ایک تکنیکی مسئلہ ہے۔ کیا آپ دوبارہ بتا سکتے ہیں؟"
+                if self.language == "ur"
+                else "I'm sorry, I'm having a technical issue. Could you please repeat?"
             )
+            fallback = await self._tts.synthesize(fallback_text)
             if fallback:
                 yield ("audio", fallback)
         finally:
