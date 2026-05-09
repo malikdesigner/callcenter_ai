@@ -26,22 +26,31 @@ def detect_language_preference(text: str) -> Optional[str]:
     t = text.strip()
     t_lower = t.lower()
 
-    ur_signals = ["urdu", "اردو", "urdoo", "urdou", "اردو میں", "urdu mein", "urdu me"]
+    ur_signals = [
+        "urdu", "اردو", "urdoo", "urdou", "اردو میں", "urdu mein", "urdu me",
+        "urdhu", "urdo", "oordoo", "ardo", "ordoo", "orda", "urdū",
+        # Common Whisper phonetic mis-transcriptions of "اردو" on phone audio
+        "or do", "ordo", "ardo", "urdo", "oordo", "erdo", "ordu",
+        "اردو میں بات", "اردو بولیں", "اردو چاہیے",
+    ]
     if any(s in t_lower or s in t for s in ur_signals):
         return "ur"
 
-    en_signals = ["english", "eng", "angrezi", "انگریزی", "english mein", "english me", "inglis"]
+    en_signals = [
+        "english", "eng", "angrezi", "انگریزی", "english mein", "english me",
+        "inglis", "inglish", "ingrezi", "angrezee",
+    ]
     if any(s in t_lower for s in en_signals):
         return "en"
 
-    # Infer from script: if they responded in Urdu script, they want Urdu
+    # Infer from script: any Urdu/Arabic characters → user is speaking Urdu
     arabic_chars = sum(1 for c in t if '؀' <= c <= 'ۿ')
-    if arabic_chars > 2:
+    if arabic_chars >= 1:
         return "ur"
-    # Responded with plain Latin text — assume English
-    if arabic_chars == 0 and len(t) > 1:
-        return "en"
 
+    # Do NOT assume English from Latin text alone — Whisper hallucinates Latin
+    # words from Urdu speech (e.g. "Geodude"). Let the caller use audio_language
+    # (Whisper's detected language) as the tiebreaker instead.
     return None
 
 
@@ -58,12 +67,12 @@ def detect_language_switch(text: str) -> Optional[str]:
     if any(p in text for p in _LANG_SWITCH_UR):
         return "ur"
 
-    # Script-based detection
+    # Script-based detection: Urdu/Arabic characters \u2192 Urdu.
+    # Do NOT auto-detect English from absence of Arabic script \u2014 a Urdu-speaking
+    # user routinely says numbers, names, and medical terms in Latin chars.
     arabic_chars = sum(1 for c in text if '\u0600' <= c <= '\u06FF')
     if arabic_chars > 3:
         return "ur"
-    if arabic_chars == 0 and len(text.strip()) > 4:
-        return "en"
 
     return None
 

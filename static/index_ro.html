@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="ur" dir="rtl">
+<html lang="ur-Latn">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>سارہ اے آئی | اسمارٹ ہسپتال ریسپشنسٹ</title>
+    <title>Sara AI | Roman Urdu Hospital Receptionist</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-body: #0f172a;
@@ -24,23 +24,22 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: 'Outfit', 'Noto Nastaliq Urdu', serif;
+            font-family: 'Outfit', sans-serif;
             background: var(--bg-body);
             color: var(--text-main);
             min-height: 100vh;
             display: flex;
             margin: 0;
-            background-image: 
-                radial-gradient(circle at 100% 0%, rgba(56, 189, 248, 0.1) 0%, transparent 40%),
-                radial-gradient(circle at 0% 100%, rgba(56, 189, 248, 0.05) 0%, transparent 40%);
+            background-image:
+                radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 100% 100%, rgba(56, 189, 248, 0.05) 0%, transparent 40%);
             background-attachment: fixed;
         }
 
-        /* ── Sidebar ── */
         aside {
             width: var(--sidebar-w);
             background: rgba(15, 23, 42, 0.85);
-            border-left: 1px solid var(--card-border);
+            border-right: 1px solid var(--card-border);
             padding: 2.5rem 1.5rem;
             display: flex;
             flex-direction: column;
@@ -89,10 +88,9 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
-        /* ── Main content ── */
         main {
             flex: 1;
-            margin-right: var(--sidebar-w);
+            margin-left: var(--sidebar-w);
             padding: 3rem 4rem;
             display: grid;
             grid-template-columns: 480px 1fr;
@@ -101,7 +99,6 @@
             max-width: 1800px;
         }
 
-        /* ── Glass Panels ── */
         .glass-panel {
             background: var(--bg-card);
             border: 1px solid var(--card-border);
@@ -114,11 +111,11 @@
             gap: 2rem;
         }
 
-        .section-header h1 { 
-            font-size: 2rem; 
-            font-weight: 800; 
+        .section-header h1 {
+            font-size: 2rem;
+            font-weight: 800;
             margin-bottom: 0.5rem;
-            background: linear-gradient(to left, #fff, #94a3b8);
+            background: linear-gradient(to right, #fff, #94a3b8);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -179,7 +176,6 @@
             justify-content: center;
             gap: 0.8rem;
             overflow: hidden;
-            font-family: inherit;
         }
 
         .btn-start {
@@ -198,7 +194,6 @@
 
         .btn-call:disabled { opacity: 0.2; cursor: not-allowed; filter: grayscale(1); }
 
-        /* ── Transcript ── */
         .transcript-wrapper {
             background: rgba(15, 23, 42, 0.4);
             border-radius: 2rem;
@@ -231,30 +226,28 @@
         }
 
         .chat-msg { display: flex; flex-direction: column; gap: 0.6rem; max-width: 80%; }
-        .chat-msg .author { font-size: 0.8rem; font-weight: 700; color: var(--text-dim); margin-right: 0.5rem; }
-        .chat-msg .bubble { 
-            padding: 1.25rem 1.5rem; 
-            border-radius: 1.5rem; 
-            line-height: 1.6; 
-            font-size: 1.1rem;
+        .chat-msg .author { font-size: 0.8rem; font-weight: 700; color: var(--text-dim); margin-left: 0.5rem; }
+        .chat-msg .bubble {
+            padding: 1.25rem 1.5rem;
+            border-radius: 1.5rem;
+            line-height: 1.6;
+            font-size: 1.05rem;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
 
-        .chat-msg.user { align-self: flex-start; }
-        .chat-msg.user .author { align-self: flex-start; margin-left: 0.5rem; }
-        .chat-msg.user .bubble { 
+        .chat-msg.user { align-self: flex-end; }
+        .chat-msg.user .author { align-self: flex-end; margin-right: 0.5rem; }
+        .chat-msg.user .bubble {
             background: linear-gradient(135deg, var(--accent) 0%, #0ea5e9 100%);
             color: #000;
-            border-bottom-left-radius: 0.4rem;
+            border-bottom-right-radius: 0.4rem;
         }
 
-        .chat-msg.agent { align-self: flex-end; }
-        .chat-msg.agent .author { align-self: flex-end; margin-right: 0.5rem; }
-        .chat-msg.agent .bubble { 
+        .chat-msg.agent .bubble {
             background: var(--bg-card);
             color: var(--text-main);
             border: 1px solid var(--card-border);
-            border-bottom-right-radius: 0.4rem;
+            border-bottom-left-radius: 0.4rem;
         }
 
         .chat-msg.system { align-self: center; width: 100%; opacity: 0.6; }
@@ -273,30 +266,36 @@
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.81a16 16 0 0 0 6.29 6.29l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
         </svg>
-        سارہ اے آئی
+        SARA AI
     </div>
-    
+
     <nav>
         <div class="nav-item active">
-            <span>🎤</span> براہ راست سیشن
+            <span>🎤</span> Live Session
         </div>
         <a href="/dashboard" class="nav-item">
-            <span>⚙️</span> ایڈمن پینل
+            <span>⚙️</span> Admin Panel
         </a>
     </nav>
+
+    <div style="margin-top: auto; padding: 1rem; background: rgba(56,189,248,0.08); border-radius: 1rem; border: 1px solid rgba(56,189,248,0.15); font-size: 0.8rem; color: var(--text-dim); line-height: 1.5;">
+        <strong style="color: var(--accent);">Roman Urdu Mode</strong><br>
+        Sara Roman Urdu mein baat karti hai.<br>
+        <span style="font-size:0.75rem; opacity:0.7;">Port 8002</span>
+    </div>
 </aside>
 
 <main>
     <div class="call-interface">
         <div class="glass-panel">
             <div class="section-header">
-                <h1>ہسپتال اے آئی ایجنٹ</h1>
-                <p>سارہ اے آئی کے ذریعے ریئل ٹائم بکنگ اور طبی مدد حاصل کریں۔</p>
+                <h1>Hospital AI Agent</h1>
+                <p>Sara AI — Roman Urdu mein real-time appointment booking aur hospital assistance.</p>
             </div>
 
             <div id="statusPill" class="status-badge status-idle">
                 <span class="dot" id="statusDot"></span>
-                <span id="statusText">ایجنٹ اسٹینڈ بائی</span>
+                <span id="statusText">Intezaar mein hai...</span>
             </div>
 
             <div class="viz-container">
@@ -306,25 +305,25 @@
             <div class="controls">
                 <button class="btn-call btn-start" id="startBtn" onclick="startCall()">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.81a16 16 0 0 0 6.29 6.29l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                    گفتگو شروع کریں
+                    Baat Karna Shuru Karein
                 </button>
                 <button class="btn-call btn-end" id="endBtn" onclick="endCall()" disabled>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.62A2 2 0 0 1 3.38 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.36 8.91"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    سیشن ختم کریں
+                    Call Khatam Karein
                 </button>
             </div>
 
             <div style="margin-top: 1rem; padding: 1.25rem; background: rgba(56, 189, 248, 0.1); border-radius: 1.25rem; font-size: 0.85rem; color: var(--accent); line-height: 1.5;">
-                <strong>سسٹم نوٹ:</strong> اے آئی ایجنٹ آپ کی آواز مانیٹر کر رہا ہے۔ براہ کرم بکنگ شروع کرنے کے لیے واضح بات کریں۔
+                <strong>Note:</strong> Sara AI tayyar hai. Microphone se baat karein — appointment book karne mein madad milegi.
             </div>
         </div>
     </div>
 
     <div class="transcript-wrapper">
-        <div class="transcript-header">گفتگو کا ریکارڈ</div>
+        <div class="transcript-header">Live Conversation Transcript</div>
         <div class="transcript-area" id="transcript">
             <div class="chat-msg system">
-                <div class="bubble">سیشن شروع ہونے کا انتظار ہے...</div>
+                <div class="bubble">Call shuru karne ka intezaar hai...</div>
             </div>
         </div>
     </div>
@@ -335,30 +334,24 @@
     let isCallActive = false;
     let animFrame;
     let nextPlayAt = 0;
-    let agentNodes = [];          // all scheduled audio nodes
+    let agentNodes = [];
     let isSaraPlaying = false;
-    let saraSpeakStartTime = 0;   // when Sara's current utterance began
-    let bargeInCount = 0;         // consecutive high-RMS frames
+    let saraSpeakStartTime = 0;
+    let bargeInCount = 0;
     const sessionId = 'session-' + Date.now();
 
     function setStatus(state, text) {
         const pill = document.getElementById('statusPill');
         const dot  = document.getElementById('statusDot');
         const txt  = document.getElementById('statusText');
-        const labels = {
-            'idle': 'ایجنٹ اسٹینڈ بائی',
-            'active': 'سارہ بات کر رہی ہے...',
-            'loading': 'سوچ رہی ہوں...',
-            'ended': 'سیشن ختم'
-        };
         pill.className = 'status-badge status-' + state;
         dot.className  = 'dot' + (state === 'active' ? ' pulse' : '');
-        txt.textContent = labels[state] || text;
+        txt.textContent = text;
     }
 
     function addMessage(type, text) {
         const box = document.getElementById('transcript');
-        const labels = { user: 'مریض', agent: 'سارہ اے آئی', system: '' };
+        const labels = { user: 'MAREEZ', agent: 'SARA AI', system: '' };
         const div = document.createElement('div');
         div.className = 'chat-msg ' + type;
         div.innerHTML = `
@@ -381,13 +374,13 @@
             isSaraPlaying = true;
             saraSpeakStartTime = Date.now();
             bargeInCount = 0;
-            setStatus('active', 'سارہ بات کر رہی ہے...');
+            setStatus('active', 'Sara bol rahi hai...');
             src.onended = () => {
                 agentNodes = agentNodes.filter(n => n !== src);
                 if (agentNodes.length === 0 && audioCtx.currentTime >= nextPlayAt - 0.05) {
                     isSaraPlaying = false;
                     bargeInCount = 0;
-                    setStatus('active', 'سن رہی ہوں...');
+                    setStatus('active', 'Sun rahi hai...');
                 }
             };
         } catch(err) { console.warn('Audio decode error', err); }
@@ -407,7 +400,7 @@
                 audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
             });
         } catch(e) {
-            alert('میکروفون تک رسائی مسترد کردی گئی۔');
+            alert('Microphone ka access nahi mila.');
             return;
         }
 
@@ -421,7 +414,7 @@
 
         ws.onopen = () => {
             isCallActive = true;
-            setStatus('loading', 'رابطہ ہو رہا ہے...');
+            setStatus('loading', 'Connection ho rahi hai...');
             document.getElementById('startBtn').disabled = true;
             document.getElementById('endBtn').disabled = false;
             startVisualiser();
@@ -434,15 +427,16 @@
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'transcript') addMessage('user', msg.text);
                 else if (msg.type === 'agent_speech') addMessage('agent', msg.text);
-                else if (msg.type === 'processing') setStatus('loading', 'سوچ رہی ہوں...');
+                else if (msg.type === 'processing') setStatus('loading', 'Soch rahi hai...');
                 else if (msg.type === 'call_ended') {
-                    setStatus('ended', 'سیشن ختم');
-                    addMessage('system', 'کال ختم ہو گئی۔');
+                    setStatus('ended', 'Call Khatam');
+                    addMessage('system', 'Call khatam ho gayi.');
                     cleanupCall();
                 }
                 else if (msg.type === 'redirect') {
-                    const label = msg.port === 8001 ? 'اردو سروس' : 'English service';
-                    addMessage('system', `${label} سے جوڑ رہے ہیں...`);
+                    addMessage('system', `Dusri service se connect ho rahi hai...`);
+                    setStatus('loading', 'Redirect ho raha hai...');
+                    localStorage.setItem('sara_autostart', JSON.stringify({ port: msg.port, ts: Date.now() }));
                     setTimeout(() => {
                         cleanupCall();
                         window.location.href = `${location.protocol}//${location.hostname}:${msg.port}`;
@@ -458,10 +452,7 @@
         processorNode.onaudioprocess = (e) => {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 const f32 = e.inputBuffer.getChannelData(0);
-                // Barge-in: detect genuine user speech while Sara is playing.
-                // 600ms cooldown prevents Sara's own initial burst from triggering this.
-                // Threshold 0.038 avoids speaker echo false-positives.
-                // Requires 3 consecutive high-RMS frames (~384ms) to confirm real speech.
+                // Barge-in: 600ms cooldown + threshold 0.038 + 3-frame debounce
                 if (isSaraPlaying && (Date.now() - saraSpeakStartTime) > 600) {
                     let sum = 0;
                     for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
@@ -483,7 +474,7 @@
 
     function endCall() {
         if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'end_call' }));
-        setStatus('ended', 'رابطہ ختم ہو رہا ہے...');
+        setStatus('ended', 'Disconnect ho raha hai...');
         setTimeout(cleanupCall, 500);
     }
 
@@ -517,7 +508,7 @@
         draw();
     }
 
-    // Auto-start if redirected from bilingual selector (port 8003)
+    // Auto-start if redirected from bilingual selector
     window.addEventListener('load', () => {
         try {
             const raw = localStorage.getItem('sara_autostart');

@@ -45,71 +45,149 @@ def _build_system_prompt(lang: str = "en") -> str:
     current_time = datetime.now().strftime("%I:%M %p")
 
     if lang == "ur":
-        return f"""آپ سارہ ہیں — {settings.hospital_name} کی ریسپشنسٹ۔ آپ ایک تجربہ کار، ہمدرد پاکستانی ریسپشنسٹ ہیں جو فون پر مریضوں سے بالکل قدرتی اردو میں بات کرتی ہیں۔
+        return f"""You are Sara — receptionist at {settings.hospital_name}. Natural Pakistani phone manner. Talk like a human, not a form bot.
 
-آج: {today} | وقت: {current_time} | کل: {tomorrow}
-ڈاکٹرز اور ان کی اسپیشلٹی: {doctor_list_str}
+Today: {today} | Time: {current_time} | Tomorrow: {tomorrow}
+Doctors: {doctor_list_str}
 
-ترتیب: نام ← موبائل نمبر ← تکلیف (پھر خود ڈاکٹر تجویز کریں) ← تاریخ ← وقت ← تصدیق
+Booking flow: name → phone → problem → recommend doctor → date → time → confirm → book
 
-━━━ سب سے اہم اصول — ڈاکٹر تجویز کریں ━━━
-جب مریض تکلیف بتائے تو:
-١۔ پہلے ہمدردی ظاہر کریں: "افسوس ہوا سن کر۔" / "سمجھ سکتی ہوں یہ تکلیف دہ ہے۔"
-٢۔ پھر براہِ راست ڈاکٹر کا نام تجویز کریں — شعبہ مت پوچھیں:
-   ✓ "آپ کی [تکلیف] کے لیے ڈاکٹر [نام] بہترین رہیں گے۔ کیا میں ان سے اپائنٹمنٹ بک کروں؟"
-   ✗ "آپ کونسے شعبے میں جانا چاہتے ہیں؟" ← یہ کبھی نہ پوچھیں
-٣۔ اگر LIVE CONTEXT میں RECOMMEND_DOCTOR لکھا ہو تو وہی ڈاکٹر تجویز کریں۔
+━━━ STEP 1: IDENTIFY WHAT THE USER IS DOING ━━━
+Every turn, first decide the user's intent:
+• ANSWERING   — giving info you asked for → acknowledge + ask next thing
+• CONFUSED    — doesn't understand (مطلب / سمجھ نہیں / کیا مراد / کیا ہے یہ) → explain briefly with examples
+• QUESTIONING — asking about you/process/hospital (کیوں / کیا آپ / کیسے / مجھے نہیں پتا) → answer briefly + continue
+• CORRECTING  — fixing earlier info (غلط / بدلو / نہیں / دوبارہ) → accept gracefully + re-collect
+• GREETING    — hello/salam → greet back naturally
 
-━━━ زبان کے اصول ━━━
-• عام، روزمرہ کی پاکستانی اردو — مشکل یا ادبی الفاظ نہیں
-  ✓ "کیا تکلیف ہے؟"  ✗ "کیا علالت ہے؟"
-  ✓ "ڈاکٹر سے ملنا ہے"  ✗ "معالج سے رجوع کرنا"
-• "آپ" سے مخاطب ہوں — "تم" یا "تو" نہیں
-• ہر موڑ پر صرف ایک سوال — پہلے مریض کی بات تسلیم کریں، پھر سوال
-• ایک ہی جملہ دوبارہ نہ دہرائیں، ہر بار مختلف انداز
+━━━ STEP 2: RESPOND BY INTENT ━━━
 
-━━━ ہمدردی کے جملے (تکلیف سن کر) ━━━
-"افسوس ہوا سن کر۔" / "پریشان نہ ہوں، ہم مدد کریں گے۔" / "ٹھیک ہو جائیں گے، ان شاء اللہ۔"
+CONFUSED → explain with simple examples, then re-ask differently (never repeat same words):
+  کیا تکلیف ہے مطلب   → یعنی کیا مسئلہ ہے ... بخار ... کھانسی ... درد یا کچھ اور
+  سمجھ نہیں آئی        → جی سر ... کیا تکلیف ہے آپکو
+  نام مطلب             → آپکا اپنا نام ... جیسے احمد یا علی
 
-━━━ مشکل حالات ━━━
-• "سمجھا نہیں" / "کیا کہا؟":  سادہ الفاظ میں دہرائیں، معافی نہ مانگیں
-• غیر متعلق سوال:  "میں اپائنٹمنٹ کے لیے مدد کر سکتی ہوں۔ [اگلا سوال]؟"
-• 2 بار سمجھ نہ آئے:  "کیا بخار ہے، درد ہے، یا کوئی اور مسئلہ؟"
+QUESTIONING → answer briefly then continue:
+  کیا آپ انسان ہیں      → جی سر ... میں ہسپتال کی اسسٹنٹ ہوں
+  مجھے نہیں پتا کونسا ڈاکٹر → کوئی مسئلہ نہیں ... مسئلہ بتا دیجیے میں بتا دیتی ہوں
+  ڈاکٹر کیوں چاہیے     → جی سر ... جس مسئلے کیلئے چیک اپ کروانا ہو
 
-━━━ رموزِ اوقاف (لازمی) ━━━
-صرف اردو علامات: ، ۔ ؟ — (انگریزی . , ? ہرگز نہ لکھیں)
+CORRECTING → accept + re-collect:
+  نمبر غلط ہوگیا       → کوئی بات نہیں ... دوبارہ بتا دیجیے
 
-━━━ مثالی گفتگو ━━━
-نام:      "آپ کا نام کیا ہے؟" / "اپنا نام بتائیں۔"
-فون:      "موبائل نمبر دیں۔" / "رابطہ نمبر کیا ہے؟"
-تکلیف:   "آپ کو کیا تکلیف ہے؟"
-ڈاکٹر:   "آپ کی [تکلیف] کے لیے ڈاکٹر [نام] بہترین ہیں — کیا ان سے وقت لوں؟"
-تاریخ:   "کس دن آنا ہے؟ کل یا کوئی اور دن؟"
-وقت:     "یہ اوقات دستیاب ہیں: [سلاٹس]۔ کون سا ٹھیک رہے گا؟"
-تصدیق:  "[نام] صاحب/صاحبہ، ڈاکٹر [نام] کے ساتھ [تاریخ] کو [وقت] پر — ٹھیک ہے؟"
-اختتام:  "کوئی اور بات؟" / "اللہ حافظ، جلد صحت یابی کی دعا ہے۔"
+━━━ BOOKING RULES ━━━
+• Symptoms → empathy + recommend SPECIFIC DOCTOR by name. NEVER "کونسے شعبے میں جانا ہے"
+  ✓ اچھا جی ... ڈاکڑ [نام] ہیں اس کے لیے ... وقت لوں
+• One thing per turn. Acknowledge before asking.
+• NEVER repeat exact same question twice — rephrase.
+• action="end" ONLY after booking done + patient says goodbye.
 
-━━━ action ━━━
-ask=مزید معلومات | confirm=سب مل گیا، تفصیل پڑھ کر تصدیق لیں | save=تصدیق ہوئی، بک کریں | end=صرف بکنگ کے بعد
+━━━ OUTPUT RULES ━━━
+1. Urdu script only (ا ب پ...). Zero English or Roman Urdu.
+2. Max 8-10 words. Very short — like a real call-center agent.
+3. Pauses with ... only. NO ۔ . ! ? ، ,
+4. Tone: جی سر ... اچھا جی ... ٹھیک ہے ... ایک سیکنڈ جی
+5. Phonetic forms: آپکا | آپکو | آپکے | نئیں | ڈاکڑ | موبایل
+6. NO formal: براہ کرم / معافی / تکلیف
 
-صرف JSON: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
+BOOKING EXAMPLES:
+سلام:    السلام علیکم ... میں سارہ ہوں ... آپکا نام کیا ہے
+فون:     اچھا جی [نام] صاحب ... موبایل نمبر بتائیں
+تکلیف:  اچھا جی ... ڈاکڑ [نام] ہیں اس کے لیے ... وقت لوں
+تاریخ:  ٹھیک ہے ... کونسے دن آنا ہے
+وقت:    یہ وقت ہیں ... [سلاٹس] ... کونسا ٹھیک ہے
+تصدیق: [نام] صاحب ... ڈاکڑ [نام] ... [تاریخ] ... [وقت] پر ... کنفرم کروں
+اختتام: جی ... شکریہ ... اللہ حافظ
 
-    return f"""You are {settings.receptionist_name}, receptionist at {settings.hospital_name}. Warm, professional, human — never robotic.
+JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
+
+    if lang == "ro":
+        return f"""You are Sara — receptionist at {settings.hospital_name}. Natural Pakistani phone manner in Roman Urdu (Latin script). Talk like a human, not a form bot.
+
+Today: {today} | Time: {current_time} | Tomorrow: {tomorrow}
+Doctors: {doctor_list_str}
+
+Booking flow: naam → phone → problem → doctor recommend → date → waqt → confirm → book
+
+━━━ STEP 1: USER KI NIYAT PAHCHANEIN ━━━
+Har turn mein pehle decide karein:
+• ANSWERING   — info de raha hai → acknowledge + agla sawal
+• CONFUSED    — samajh nahi aaya (matlab / samajh nahi / kya hai yeh) → briefly explain + examples
+• QUESTIONING — apke barey mein pooch raha hai (kya aap insaan / kyun / kaise) → jawab do + continue
+• CORRECTING  — pehli baat theek kar raha hai (galat / badlo / nahi) → accept + re-collect
+• GREETING    — hello/salam → naturally greet back
+
+━━━ STEP 2: NIYAT KE MUTABIQ JAWAB ━━━
+
+CONFUSED → simple examples ke saath samjhaein, phir alag andaz mein poochein (same words repeat mat karein):
+  matlab kya hai        → yani kya masla hai ... bukhaar ... khansi ... dard ya kuch aur
+  samajh nahi aaya      → ji sir ... kya takleef hai aapko
+  naam matlab           → aapka apna naam ... jaise Ahmad ya Ali
+
+QUESTIONING → briefly answer then continue:
+  kya aap insaan hain   → ji sir ... main hospital ki assistant hoon
+  nahi pata konsa doctor → koi masla nahi ... masla bata dein main bata deti hoon
+  doctor kyun chahiye   → ji sir ... jis masle ke liye check-up karwana ho
+
+CORRECTING → accept + re-collect:
+  number galat hogaya   → koi baat nahi ... dobara bata dein
+
+━━━ BOOKING RULES ━━━
+• Symptoms → empathy + recommend SPECIFIC DOCTOR by name. NEVER "konse department mein jana hai"
+  ✓ Acha ji ... Dr [naam] hain is ke liye ... waqt loon
+• One thing per turn. Acknowledge before asking.
+• NEVER repeat exact same question twice — rephrase.
+• action="end" ONLY after booking done + patient says goodbye.
+
+━━━ OUTPUT RULES ━━━
+1. Roman Urdu only (Latin script). Zero Urdu script or English.
+2. Max 8-10 words. Very short — like a real call-center agent.
+3. Pauses with ... only. NO periods, commas, exclamation marks.
+4. Tone: ji sir ... acha ji ... theek hai ... ek second ji
+5. Common forms: aapka | aapko | nahi | doctor | mobile
+6. NO formal: meherbani / maafi / izaazat
+
+BOOKING EXAMPLES:
+Salam:    Assalam o alaikum ... main Sara hoon ... aapka naam
+Phone:    Acha ji [naam] sahab ... mobile number bataein
+Takleef:  Acha ji ... Dr [naam] hain is ke liye ... waqt loon
+Date:     Theek hai ... konse din aana hai
+Waqt:     Yeh waqt hain ... [slots] ... konsa theek hai
+Confirm:  [naam] sahab ... Dr [naam] ... [date] ... [waqt] par ... confirm karoon
+Ikhtitaam: Ji ... shukriya ... Allah hafiz
+
+JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
+
+    return f"""You are {settings.receptionist_name}, receptionist at {settings.hospital_name}. Warm, human, conversational — never robotic or form-like.
 Today: {today} | Time: {current_time} | Tomorrow: {tomorrow}
 Doctors & specialties: {doctor_list_str}
 
-Flow: name → phone → symptoms → (YOU recommend specific doctor) → date → time → confirm → book
+Booking flow: name → phone → symptoms → recommend doctor → date → time → confirm → book
 
-Rules:
-1. When patient describes symptoms — show empathy first ("I'm sorry to hear that"), then recommend a SPECIFIC DOCTOR by name. NEVER ask "which department do you want?" — you pick the right doctor based on their symptoms.
-   ✓ "For your head pain, I'd recommend Dr. Kamran Baig, our neurologist. Shall I book with him?"
-   ✗ "Which department would you like to visit?"
-2. If LIVE CONTEXT shows RECOMMEND_DOCTOR — use exactly that doctor.
-3. One question per turn. Acknowledge what was said before asking next.
-4. Never repeat the same phrase. Vary wording naturally.
-5. action="end" ONLY after booking is done and patient says goodbye.
+STEP 1 — IDENTIFY USER INTENT before responding:
+• ANSWERING   — giving info you asked for → acknowledge + ask next
+• CONFUSED    — doesn't understand ("what do you mean", "I don't get it") → explain simply with examples
+• QUESTIONING — asking about you/process ("are you human", "why", "I don't know which doctor") → answer + continue
+• CORRECTING  — fixing info ("wrong number", "actually", "no wait") → accept + re-collect
+• GREETING    — hello → greet naturally
 
-action: ask=need info | confirm=all ready, read back & confirm | save=patient confirmed, book it | end=ONLY after booking + goodbye
+STEP 2 — RESPOND BY INTENT:
+CONFUSED    → Explain with simple examples, re-ask in different words (never same sentence twice)
+              "What do you mean by symptoms?" → "Things like headache, fever, cough — what's bothering you?"
+QUESTIONING → Answer briefly, continue naturally
+              "Are you a human?" → "I'm the hospital assistant — let me help you book."
+              "I don't know which doctor" → "No problem — tell me what's bothering you, I'll recommend the right one."
+CORRECTING  → "Of course, go ahead." → accept correction, re-collect field
+
+BOOKING RULES:
+1. Symptoms → empathy first, then recommend SPECIFIC DOCTOR by name. NEVER "which department?"
+   ✓ "For headaches, Dr. Kamran Baig is our neurologist — shall I book with him?"
+   ✗ "Which department would you like?"
+2. One question per turn. Acknowledge before asking.
+3. NEVER repeat the same question twice — rephrase.
+4. action="end" ONLY after booking complete + patient says goodbye.
+
+action: ask=collecting info | confirm=all ready, read back | save=patient confirmed | end=after booking+goodbye
 JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
 
 # ── Agent class ────────────────────────────────────────────────────────────────
@@ -147,23 +225,27 @@ class HospitalAgent:
 
     async def get_greeting(self) -> str:
         if self._bilingual_mode and not self._language_chosen:
-            hour = datetime.now().hour
-            time_greet = "Good morning" if hour < 12 else "Good afternoon" if hour < 17 else "Good evening"
             return (
-                f"{time_greet}! Welcome to {settings.hospital_name}. "
-                f"I'm {settings.receptionist_name}, your receptionist. "
-                f"Would you like to continue in English or Urdu?"
+                f"To continue in English, say English. "
+                f"اردو میں جاری رکھنے کے لیے اردو کہیں۔"
             )
 
         prompt = "A new caller just connected. Greet them naturally like a real receptionist — brief and warm."
         if self.language == "ur":
-            prompt = "نیا کال آیا ہے۔ عام پاکستانی ریسپشنسٹ کی طرح مختصر اور دوستانہ انداز میں سلام کریں اور نام پوچھیں۔"
+            prompt = "New call arrived. Greet in short conversational Urdu script, Pakistani call-center style. Max 6-8 words, use ... for pauses, no other punctuation. Example: السلام علیکم ... میں سارہ ہوں ... آپکا نام کیا ہے"
+        elif self.language == "ro":
+            prompt = "New call arrived. Greet in short conversational Roman Urdu (Latin script), Pakistani call-center style. Max 6-8 words, use ... for pauses, no other punctuation. Example: Assalam o alaikum ... main Sara hoon ... aapka naam"
         result = await self._chat(prompt)
 
         fallback_en = f"Thank you for calling {settings.hospital_name}, this is {settings.receptionist_name}. How can I help you?"
-        fallback_ur = f"السلام علیکم، {settings.hospital_name} میں خوش آمدید! میں سارہ بول رہی ہوں۔ آپ کا نام کیا ہے؟"
+        fallback_ur = f"السلام علیکم ... میں سارہ ہوں {settings.hospital_name} سے ... آپکا نام کیا ہے"
+        fallback_ro = f"Assalam o alaikum ... main Sara hoon {settings.hospital_name} se ... aapka naam"
 
-        return result.get("speech", fallback_en if self.language == "en" else fallback_ur)
+        if self.language == "ur":
+            return result.get("speech", fallback_ur)
+        if self.language == "ro":
+            return result.get("speech", fallback_ro)
+        return result.get("speech", fallback_en)
 
     async def process_turn(self, user_text: str) -> dict:
         """
@@ -188,7 +270,7 @@ class HospitalAgent:
 
         return result
 
-    async def process_turn_stream(self, user_text: str):
+    async def process_turn_stream(self, user_text: str, audio_language: str = None):
         """
         Yields strings (sentences) as they are generated by the LLM.
         The very last item yielded will be the complete response dict.
@@ -200,30 +282,40 @@ class HospitalAgent:
         # ── Bilingual mode: first turn is language selection ──────────────
         if self._bilingual_mode and not self._language_chosen:
             pref = detect_language_preference(user_text)
+
+            # Whisper's audio-level language detection is the ground truth when
+            # text-based detection fails (e.g. hallucinated Latin words from Urdu speech)
+            if pref is None and audio_language == "ur":
+                # Whisper's audio-level detection is reliable for Urdu — use it
+                # even when the transcript is a phonetic mis-transcription like "or do"
+                pref = "ur"
+                logger.info(f"[Agent] Bilingual: Whisper detected Urdu audio (transcript='{user_text}')")
+
             if pref == "ur":
-                self.language = "ur"
-                self._language_chosen = True
-                logger.info("[Agent] Bilingual: user chose Urdu")
-                speech = f"بہت اچھا! میں اردو میں بات کروں گی۔ آپ کا نام کیا ہے؟"
+                self.language = "ur"   # so TTS uses Urdu voice for the farewell line
+                speech = "بالکل جی ... ابھی اردو سروس سے جوڑتی ہوں"
+                target_port = 8001
+                logger.info("[Agent] Bilingual: Urdu detected → redirecting to port 8001")
             elif pref == "en":
                 self.language = "en"
-                self._language_chosen = True
-                logger.info("[Agent] Bilingual: user chose English")
-                speech = f"Great! I'll continue in English. May I have your name please?"
+                speech = "Perfect! Connecting you to English service now."
+                target_port = 8000
+                logger.info("[Agent] Bilingual: English detected → redirecting to port 8000")
             else:
-                speech = "Sorry, I didn't catch that. Please say 'English' or 'Urdu' / براہ کرم کہیں 'Urdu' یا 'English'۔"
-                logger.info("[Agent] Bilingual: language preference unclear, re-asking")
+                speech = "سمجھی نئیں ... اردو یا English کہیں / Please say Urdu or English"
+                logger.info(f"[Agent] Bilingual: unclear (transcript='{user_text}', audio_lang={audio_language})")
+                yield speech
+                self._history.append({"role": "user", "content": user_text})
+                self._history.append({"role": "assistant", "content": speech})
+                yield {"speech": speech, "action": "ask", "data": {}}
+                return
+
+            # Language confirmed — play farewell then redirect browser to the right server
             yield speech
             self._history.append({"role": "user", "content": user_text})
             self._history.append({"role": "assistant", "content": speech})
-            yield {"speech": speech, "action": "ask", "data": {}}
+            yield {"speech": speech, "action": "redirect", "data": {"port": target_port}}
             return
-
-        # ── Language auto-detection & switching ───────────────────────────
-        detected_lang = detect_language_switch(user_text)
-        if detected_lang and detected_lang != self.language:
-            self.language = detected_lang
-            logger.info(f"[Agent] Language switched to '{self.language}'")
 
         # ── Symptom → department pre-fill (no LLM needed) ────────────────
         if "department" not in self._collected or not self._collected["department"]:
@@ -236,10 +328,25 @@ class HospitalAgent:
         intent = detect_intent(user_text, self._flow_state, self.language)
         logger.debug(f"[Agent] Intent={intent} | State={self._flow_state} | Awaiting={self._awaiting_confirmation}")
 
+        # ── Language switching — explicit commands only ───────────────────
+        # We rely on detect_intent (not detect_language_switch) for this because
+        # detect_language_switch's script heuristic falsely returns "en" for
+        # phone numbers and names that contain no Arabic characters.
+        if intent == "change_language_en" and self.language != "en":
+            self.language = "en"
+            logger.info("[Agent] Language switched to 'en' (explicit command)")
+        elif intent == "change_language_ur" and self.language != "ur":
+            self.language = "ur"
+            logger.info("[Agent] Language switched to 'ur' (explicit command)")
+
         # ── Failure tracking ──────────────────────────────────────────────
-        if intent == "unclear" or len(user_text.strip()) < 2:
+        # Confusion/questions are NOT failures — the user is engaging, just
+        # not answering the slot question yet.
+        user_intent_type = self._classify_user_intent(user_text)
+        is_non_answer = user_intent_type in ("CONFUSED", "QUESTIONING", "CORRECTING")
+        if not is_non_answer and (intent == "unclear" or len(user_text.strip()) < 2):
             self._consecutive_failures += 1
-        else:
+        elif not is_non_answer:
             self._consecutive_failures = 0
 
         # ── Confirmation gate: if we are waiting for user's yes/no ────────
@@ -359,21 +466,27 @@ class HospitalAgent:
                 phone_val = self._collected.get("patient_phone", "")
                 self._collected.pop("patient_phone", None)  # force re-collect
                 if self.language == "ur":
-                    result["speech"] = f"'{phone_val}' نمبر بہت چھوٹا لگ رہا ہے۔ براہ کرم پورا موبائل نمبر دوبارہ بتائیں — کم از کم 10 ہندسے ہونے چاہیے۔"
+                    result["speech"] = f"نمبر مکمل نئیں ... پورا موبایل نمبر بتائیں"
+                elif self.language == "ro":
+                    result["speech"] = f"Number mukammal nahi ... pura mobile number bataein"
                 else:
                     result["speech"] = f"That number doesn't look right — it's too short. Please give me your full phone number (at least 10 digits)."
             elif "_phone_too_long" in missing:
                 phone_val = self._collected.get("patient_phone", "")
                 self._collected.pop("patient_phone", None)
                 if self.language == "ur":
-                    result["speech"] = f"'{phone_val}' نمبر بہت لمبا لگ رہا ہے۔ براہ کرم صحیح موبائل نمبر بتائیں۔"
+                    result["speech"] = f"نمبر لمبا لگتا ہے ... صحیح نمبر بتائیں"
+                elif self.language == "ro":
+                    result["speech"] = f"Number lamba lagta hai ... sahi number bataein"
                 else:
                     result["speech"] = f"That number seems too long. Could you double-check and give me your correct phone number?"
             else:
                 real_missing = [f for f in missing if not f.startswith("_")]
                 labels = [f.replace('patient_', '').replace('_', ' ') for f in real_missing]
                 if self.language == "ur":
-                    result["speech"] = f"بکنگ کے لیے ابھی {' اور '.join(labels)} درکار ہے۔ کیا آپ یہ بتا سکتے ہیں؟"
+                    result["speech"] = f"ابھی {' اور '.join(labels)} چاہیے ... بتا سکتے ہیں"
+                elif self.language == "ro":
+                    result["speech"] = f"Abhi {' aur '.join(labels)} chahiye ... bata sakte hain"
                 else:
                     result["speech"] = f"I still need {', and '.join(labels)} before I can book. Could you provide that?"
             action = "ask"
@@ -540,6 +653,8 @@ class HospitalAgent:
         for msg in self._history:
             if self.language == "ur":
                 role = "مریض" if msg["role"] == "user" else "سارہ"
+            elif self.language == "ro":
+                role = "Mareez" if msg["role"] == "user" else "Sara"
             else:
                 role = "Patient" if msg["role"] == "user" else "Sara AI"
             
@@ -595,7 +710,37 @@ class HospitalAgent:
             return "collect_time"
         return "ask_information"
 
-    def _build_context_injection(self) -> str:
+    @staticmethod
+    def _classify_user_intent(text: str) -> str:
+        """
+        Fast heuristic classification of the user's turn.
+        Returns: CONFUSED | QUESTIONING | CORRECTING | ANSWERING
+        Used to signal the LLM that slot-filling should pause this turn.
+        """
+        t = text.strip()
+        t_lower = t.lower()
+
+        _CONFUSED_UR = ["مطلب", "سمجھ نہیں", "کیا مراد", "سمجھائیں", "نہیں سمجھا", "نہیں سمجھی", "کیا ہے یہ", "یہ کیا"]
+        _CONFUSED_RO = ["matlab", "samajh nahi", "kya muraad", "samjhaein", "nahi samjha", "nahi samjhi", "kya hai yeh", "kya matlab"]
+        _CONFUSED_EN = ["what do you mean", "what does that mean", "don't understand", "i don't get", "what is that", "confused", "explain"]
+        if any(w in t for w in _CONFUSED_UR) or any(w in t_lower for w in _CONFUSED_RO) or any(w in t_lower for w in _CONFUSED_EN):
+            return "CONFUSED"
+
+        _QUESTION_UR = ["کیا آپ انسان", "آپ کون", "مجھے نہیں پتا", "نہیں پتا کونسا", "ڈاکٹر کیوں", "کیوں چاہیے", "کیسے", "کب تک", "کتنا وقت"]
+        _QUESTION_RO = ["kya aap insaan", "aap kaun", "mujhe nahi pata", "nahi pata konsa", "doctor kyun", "kyun chahiye", "kaise", "kab tak", "kitna waqt"]
+        _QUESTION_EN = ["are you human", "who are you", "why do you", "i don't know which", "i'm not sure which", "how long", "what happens"]
+        if any(w in t for w in _QUESTION_UR) or any(w in t_lower for w in _QUESTION_RO) or any(w in t_lower for w in _QUESTION_EN):
+            return "QUESTIONING"
+
+        _CORRECT_UR = ["غلط", "بدلو", "بدلیں", "دوبارہ بتاتا", "دوبارہ بتاتی", "غلط ہوگیا", "غلط دیا", "صحیح نئیں"]
+        _CORRECT_RO = ["galat", "badlo", "badlein", "dobara bata", "galat hogaya", "galat diya", "theek nahi"]
+        _CORRECT_EN = ["wrong number", "that's wrong", "i said", "actually it's", "no wait", "correction", "i meant"]
+        if any(w in t for w in _CORRECT_UR) or any(w in t_lower for w in _CORRECT_RO) or any(w in t_lower for w in _CORRECT_EN):
+            return "CORRECTING"
+
+        return "ANSWERING"
+
+    def _build_context_injection(self, user_text: str = "") -> str:
         """
         Inject live DB availability and collected state into the system prompt.
         - If doctor + date are both known → show exact free slots for that combo.
@@ -605,21 +750,27 @@ class HospitalAgent:
         from datetime import date as _date
         lines = []
 
+        # ── Classify user intent so LLM knows how to respond this turn ───────
+        user_intent = self._classify_user_intent(user_text) if user_text else "ANSWERING"
+        non_answering = user_intent in ("CONFUSED", "QUESTIONING", "CORRECTING")
+        if non_answering:
+            lines.append(
+                f"USER_INTENT: {user_intent} — "
+                + {
+                    "CONFUSED":    "The user does not understand. Explain first, then gently re-ask.",
+                    "QUESTIONING": "The user is asking a question. Answer it briefly, then continue naturally.",
+                    "CORRECTING":  "The user is correcting earlier info. Acknowledge it and re-collect that field.",
+                }[user_intent]
+            )
+
         # Post-booking state: appointment is confirmed, handle follow-up questions
         if self._flow_state == "post_booking":
             appt_id = self._collected.get("appointment_id", "")
-            if self.language == "ur":
-                lines.append(
-                    f"BOOKING_COMPLETE: اپائنٹمنٹ #{appt_id} کنفرم ہو چکا ہے۔ "
-                    f"مریض کے کسی بھی سوال کا جواب دیں۔ "
-                    f"جب مریض کہے 'شکریہ'، 'اللہ حافظ'، 'ٹھیک ہے'، یا 'بس' تو action='end' سیٹ کریں۔"
-                )
-            else:
-                lines.append(
-                    f"BOOKING_COMPLETE: Appointment #{appt_id} is confirmed. "
-                    f"Answer any follow-up questions the patient has. "
-                    f"When the patient says goodbye, thanks, or indicates they are done, set action='end'."
-                )
+            lines.append(
+                f"BOOKING_COMPLETE: Appointment #{appt_id} is confirmed. "
+                f"Answer follow-up questions naturally. "
+                f"When patient says goodbye/thanks/done → action='end'."
+            )
             return "\n\n".join(lines)
 
         if self._collected:
@@ -627,39 +778,47 @@ class HospitalAgent:
 
         missing = self._get_missing_requirements()
         if missing:
-            lines.append(f"MISSING_FOLLOWING_INFO: {', '.join(missing)}")
-            if self.language == "ur":
-                lines.append("STRICT RULE: آگے بڑھنے سے پہلے 'نام' اور 'فون نمبر' حاصل کرنا لازمی ہے۔")
-                lines.append("STRICT RULE: مریض کی بات کا جواب دیں اور پھر الگ انداز میں وہ معلومات طلب کریں جو باقی ہیں۔ ایک ہی جملہ نہ دہرائیں۔")
+            lines.append(f"STILL_NEEDED: {', '.join(missing)}")
+            if non_answering:
+                # User is confused/questioning — don't force slot-filling this turn
+                lines.append(
+                    "NOTE: Handle the user's intent above first. "
+                    "Only ask for missing info after you have addressed their confusion/question."
+                )
             else:
-                lines.append("STRICT RULE: You MUST collect Name and Phone before Confirm/Save.")
-                lines.append("STRICT RULE: Acknowledge the user's statement and ask for the missing information in a varied, non-repetitive way.")
+                if self.language in ("ur", "ro"):
+                    lines.append("RULE: Pehle achi tarah jawab dein, phir alag andaz mein missing info maangein. Ek hi phrase dobara mat bolein.")
+                else:
+                    lines.append("RULE: Acknowledge what they said, then ask for the missing info in a natural, non-repetitive way.")
         else:
-            if self.language == "ur":
-                lines.append("ALL_INFO_COLLECTED: تمام معلومات مل گئی ہیں۔ تصدیق کی طرف بڑھیں۔")
-            else:
-                lines.append("ALL_INFO_COLLECTED: All info collected — proceed to Confirmation.")
+            lines.append("ALL_INFO_COLLECTED: All info ready — proceed to confirmation.")
 
         # ── Repetition guard ──────────────────────────────────────────────────
         if self._last_asked_state and self._last_asked_state == self._flow_state:
-            if self.language == "ur":
-                lines.append("REPHRASE: آپ نے یہ سوال پہلے بھی پوچھا ہے۔ اسے بالکل مختلف، سادہ الفاظ میں پوچھیں۔")
+            if self.language in ("ur", "ro"):
+                lines.append("REPHRASE: Yeh sawal pehle poocha ja chuka hai. Bilkul alag aur seedha andaz mein poochein.")
             else:
-                lines.append("REPHRASE: You already asked this. Ask it differently — simpler words.")
+                lines.append("REPHRASE: You already asked this exact thing. Use completely different words.")
         self._last_asked_state = self._flow_state
 
         # ── Failure counter hint ──────────────────────────────────────────────
         if self._consecutive_failures >= 2:
             if self.language == "ur":
                 lines.append(
-                    f"USER_STRUGGLING ({self._consecutive_failures} بار): مریض کو سمجھنے میں مشکل ہو رہی ہے۔ "
-                    "سوال بہت مختصر اور سادہ کریں۔ "
-                    "اگر مسئلہ سمجھ نہ آئے تو آپشن دیں: 'بخار ہے؟ درد ہے؟ یا کوئی اور تکلیف؟'"
+                    f"USER_STRUGGLING ({self._consecutive_failures} baar): "
+                    "Bahut chota aur saadha poochein. "
+                    "Agar phir bhi nahi samjhe: 'بخار ... درد ... یا کچھ اور'"
+                )
+            elif self.language == "ro":
+                lines.append(
+                    f"USER_STRUGGLING ({self._consecutive_failures} baar): "
+                    "Bahut chota aur saadha poochein. "
+                    "Agar phir bhi nahi samjhe: 'bukhaar ... dard ... ya kuch aur'"
                 )
             else:
                 lines.append(
                     f"USER_STRUGGLING ({self._consecutive_failures} turns): Simplify drastically. "
-                    "Offer a multiple-choice if stuck: 'Is it fever, pain, or something else?'"
+                    "Try multiple choice: 'Is it fever, pain, or something else?'"
                 )
 
         doctor = self._collected.get("doctor_name", "")
@@ -709,11 +868,11 @@ class HospitalAgent:
                         ).all()
                     if dept_docs:
                         doc_names = ", ".join(f"{d.name} ({d.specialty})" for d in dept_docs)
-                        if self.language == "ur":
+                        if self.language in ("ur", "ro"):
                             lines.append(
-                                f"RECOMMEND_DOCTOR: {dept} شعبے میں یہ ڈاکٹرز ہیں: {doc_names}۔ "
-                                f"مریض کی تکلیف کے مطابق ایک ڈاکٹر کا نام خود تجویز کریں — "
-                                f"'کونسے شعبے میں جانا ہے؟' ہرگز نہ پوچھیں۔"
+                                f"RECOMMEND_DOCTOR: {dept} department mein yeh doctors hain: {doc_names}. "
+                                f"Patient ki takleef ke mutabiq ek doctor ka naam khud suggest karein. "
+                                f"'Kaun sa department chahiye?' mat poochein."
                             )
                         else:
                             lines.append(
@@ -768,7 +927,9 @@ class HospitalAgent:
             if m:
                 speech = m.group(1)
             elif self.language == "ur":
-                speech = f"{settings.hospital_name} میں کال کرنے کا شکریہ۔ میں آپ کی کیا مدد کر سکتی ہوں؟"
+                speech = f"السلام علیکم ... {settings.hospital_name} سے سارہ ہوں ... کیا مدد کروں"
+            elif self.language == "ro":
+                speech = f"Assalam o alaikum ... {settings.hospital_name} se Sara hoon ... kya madad karoon"
             else:
                 speech = f"Thank you for calling {settings.hospital_name}. How can I help?"
             result = {"speech": speech, "action": "none", "data": {}}
@@ -782,7 +943,7 @@ class HospitalAgent:
         Add GEMINI_API_KEY or GROQ_API_KEY to .env to enable cloud providers.
         """
         system = _build_system_prompt(self.language)
-        ctx = self._build_context_injection()
+        ctx = self._build_context_injection(user_input)
         if ctx:
             system += f"\n\n--- LIVE CONTEXT ---\n{ctx}"
 
@@ -892,11 +1053,9 @@ class HospitalAgent:
         # ── 5. All providers failed ────────────────────────────────────────
         logger.error("[LLM] All providers failed.")
         if self.language == "ur":
-            speech = (
-                f"{settings.hospital_name} میں کال کرنے کا شکریہ۔ "
-                f"میں سارہ بات کر رہی ہوں۔ ابھی ایک تکنیکی مسئلہ ہے، "
-                f"براہ کرم تھوڑا انتظار کریں۔"
-            )
+            speech = "سوری ... ابھی تکنیکی مسئلہ ہے ... تھوڑی دیر بعد کوشش کریں"
+        elif self.language == "ro":
+            speech = "Sori ... abhi technical masla hai ... thodi der baad koshish karein"
         else:
             speech = (
                 f"Thank you for calling {settings.hospital_name}. "
@@ -922,12 +1081,19 @@ class HospitalAgent:
 
             if self.language == "ur":
                 result["speech"] = (
-                    f"بالکل! آپ کا اپائنٹمنٹ کنفرم ہو گیا ہے۔ "
-                    f"{appt.patient_name} صاحب، {appt.doctor_name} کے ساتھ "
-                    f"{appt.appointment_date.strftime('%d %B')} کو "
-                    f"{appt.appointment_time} پر ملاقات بک ہو گئی ہے۔ "
-                    f"بکنگ نمبر #{appt.id} ہے۔ "
-                    f"کیا آپ کو کچھ اور معلومات چاہیے؟"
+                    f"بالکل جی ... {appt.patient_name} صاحب ... "
+                    f"ڈاکڑ {appt.doctor_name} کے ساتھ ... "
+                    f"{appt.appointment_date.strftime('%d %B')} کو ... "
+                    f"{appt.appointment_time} بجے ... "
+                    f"بکنگ نمبر {appt.id} ہے ... کوئی اور بات"
+                )
+            elif self.language == "ro":
+                result["speech"] = (
+                    f"Bilkul ji ... {appt.patient_name} sahab ... "
+                    f"Dr {appt.doctor_name} ke saath ... "
+                    f"{appt.appointment_date.strftime('%d %B')} ko ... "
+                    f"{appt.appointment_time} baje ... "
+                    f"booking number {appt.id} hai ... koi aur baat"
                 )
             else:
                 result["speech"] = (
@@ -947,7 +1113,9 @@ class HospitalAgent:
 
             if "phone number" in error_msg.lower():
                 if self.language == "ur":
-                    result["speech"] = "فون نمبر درست نہیں لگتا۔ کیا آپ دوبارہ نمبر بتا سکتے ہیں؟"
+                    result["speech"] = "نمبر غلط لگتا ہے ... دوبارہ بتائیں"
+                elif self.language == "ro":
+                    result["speech"] = "Number galat lagta hai ... dobara bataein"
                 else:
                     result["speech"] = "That phone number doesn't look right. Could you give me a valid number?"
 
@@ -965,33 +1133,41 @@ class HospitalAgent:
                 self._collected.pop("appointment_time", None)
 
                 if free_slots:
-                    slots_str = ", ".join(free_slots[:4])
+                    slots_str_ur = "، ".join(free_slots[:4])
+                    slots_str_en = ", ".join(free_slots[:4])
                     if self.language == "ur":
                         result["speech"] = (
-                            f"معذرت، {info.get('appointment_time', 'یہ وقت')} {doctor} کے لیے دستیاب نہیں ہے۔ "
-                            f"دستیاب اوقات یہ ہیں: {slots_str}۔ کون سا وقت ٹھیک رہے گا؟"
+                            f"یہ وقت نئیں ہے ... یہ دستیاب ہیں ... {slots_str_ur} ... کونسا ٹھیک ہے"
+                        )
+                    elif self.language == "ro":
+                        result["speech"] = (
+                            f"Yeh waqt nahi hai ... yeh available hain ... {slots_str_en} ... konsa theek hai"
                         )
                     else:
                         result["speech"] = (
                             f"Sorry, {info.get('appointment_time', 'that slot')} isn't available for {doctor}. "
-                            f"Available times are: {slots_str}. Which works for you?"
+                            f"Available times are: {slots_str_en}. Which works for you?"
                         )
                 else:
                     # No slots at all for this doctor on this date — suggest other doctors
                     alternatives = self.booking.get_next_available(dept, days_ahead=5)
                     self._collected.pop("appointment_date", None)
                     if alternatives:
-                        alt_lines = [
-                            f"{a['doctor']} on {a['date']} at {a['slots'][0]}"
-                            for a in alternatives[:3]
-                            if a["doctor"] != doctor
-                        ]
-                        alt_str = "; ".join(alt_lines) if alt_lines else "other times"
+                        if self.language == "ur":
+                            alt_lines = [f"{a['doctor']} {a['date']} کو {a['slots'][0]} بجے" for a in alternatives[:2] if a["doctor"] != doctor]
+                        elif self.language == "ro":
+                            alt_lines = [f"{a['doctor']} {a['date']} ko {a['slots'][0]} baje" for a in alternatives[:2] if a["doctor"] != doctor]
+                        else:
+                            alt_lines = [f"{a['doctor']} on {a['date']} at {a['slots'][0]}" for a in alternatives[:2] if a["doctor"] != doctor]
+                        alt_str = " ... ".join(alt_lines) if alt_lines else ""
                         if self.language == "ur":
                             result["speech"] = (
-                                f"معذرت، {doctor} اس تاریخ کو دستیاب نہیں ہیں۔ "
-                                f"آپ یہ آپشنز دیکھ سکتے ہیں: {alt_str}۔ کیا کوئی اور ڈاکٹر یا تاریخ ٹھیک رہے گی؟"
-                            )
+                                f"ڈاکڑ {doctor} اس دن نئیں ہیں ... {alt_str} ... کوئی اور دن"
+                            ) if alt_str else f"ڈاکڑ {doctor} دستیاب نئیں ... کوئی اور دن لیتے ہیں"
+                        elif self.language == "ro":
+                            result["speech"] = (
+                                f"Dr {doctor} us din nahi hain ... {alt_str} ... koi aur din"
+                            ) if alt_str else f"Dr {doctor} available nahi ... koi aur din lete hain"
                         else:
                             result["speech"] = (
                                 f"Sorry, {doctor} has no availability on that date. "
@@ -999,12 +1175,16 @@ class HospitalAgent:
                             )
                     else:
                         if self.language == "ur":
-                            result["speech"] = f"معذرت، {doctor} اس وقت دستیاب نہیں ہیں۔ کیا کوئی اور ڈاکٹر ٹھیک رہے گا؟"
+                            result["speech"] = f"ڈاکڑ {doctor} ابھی دستیاب نئیں ... کوئی اور ڈاکڑ لیتے ہیں"
+                        elif self.language == "ro":
+                            result["speech"] = f"Dr {doctor} abhi available nahi ... koi aur doctor lete hain"
                         else:
                             result["speech"] = f"Sorry, {doctor} isn't available then. Would you like to try a different doctor?"
             else:
                 if self.language == "ur":
-                    result["speech"] = f"معذرت، بکنگ مکمل نہیں ہو سکی۔ کیا ہم دوبارہ کوشش کریں؟"
+                    result["speech"] = "بکنگ نئیں ہوسکی ... دوبارہ کوشش کریں"
+                elif self.language == "ro":
+                    result["speech"] = "Booking nahi ho saki ... dobara koshish karein"
                 else:
                     result["speech"] = f"I'm sorry, I couldn't complete the booking. Shall we try again?"
             result["action"] = "ask"
@@ -1013,7 +1193,9 @@ class HospitalAgent:
             missing_field = str(e).strip("'")
             logger.warning(f"[Booking] Missing field: {missing_field}")
             if self.language == "ur":
-                result["speech"] = f"بکنگ کے لیے {missing_field.replace('_', ' ')} درکار ہے۔ کیا آپ یہ بتا سکتے ہیں؟"
+                result["speech"] = f"بکنگ کے لیے {missing_field.replace('_', ' ')} درکار ہے ... بتائیں"
+            elif self.language == "ro":
+                result["speech"] = f"Booking ke liye {missing_field.replace('_', ' ')} chahiye ... bataein"
             else:
                 result["speech"] = f"I still need your {missing_field.replace('_', ' ')} to complete the booking."
             result["action"] = "ask"

@@ -15,6 +15,7 @@ from loguru import logger
 from src.appointment.models import Appointment, Doctor, Department, DoctorSlot, create_tables, engine
 from src.appointment.booking import BookingSystem, resolve_department
 from src.pipeline.call_handler import CallHandler
+from src.api.twilio_handler import router as twilio_router
 from sqlmodel import Session, select
 from datetime import datetime, date
 
@@ -33,6 +34,7 @@ def create_app(language: str = None) -> FastAPI:
 
     new_app = FastAPI(title="AI Hospital Receptionist", version="1.0.0")
     new_app.mount("/static", StaticFiles(directory="static"), name="static")
+    new_app.include_router(twilio_router)
 
     # ── Startup ────────────────────────────────────────────────────────────────
 
@@ -48,6 +50,8 @@ def create_app(language: str = None) -> FastAPI:
     async def root():
         if lang == "ur":
             return FileResponse("static/index_ur.html")
+        if lang == "ro":
+            return FileResponse("static/index_ro.html")
         return FileResponse("static/index.html")
 
     @new_app.get("/urdu")

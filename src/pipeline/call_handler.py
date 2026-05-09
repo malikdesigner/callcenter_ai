@@ -77,9 +77,10 @@ class CallHandler:
 
     # ── Instance ──────────────────────────────────────────────────────────────
 
-    def __init__(self, session_id: str, language: str = "en"):
+    def __init__(self, session_id: str, language: str = "en", phone_mode: bool = False):
         self.session_id = session_id
         self.language = language
+        self.phone_mode = phone_mode          # True for Twilio calls (8 kHz upsampled audio)
         self.agent = HospitalAgent(language=language)
 
         # Per-call audio state
@@ -129,22 +130,39 @@ class CallHandler:
         greeting_hash = hashlib.md5(greeting.encode()).hexdigest()
         cache_path = os.path.join(cache_dir, f"greeting_{greeting_hash}.bin")
 
-        if os.path.exists(cache_path):
+        # Bilingual greetings use mixed TTS voices — don't serve from single-voice cache
+        if os.path.exists(cache_path) and not self.agent._bilingual_mode:
             logger.info(f"[{self.session_id}] Using cached greeting audio")
             with open(cache_path, "rb") as f:
                 yield ("audio", f.read())
             return
 
-        # Synthesize sentence-by-sentence and stream immediately
         greeting = _sanitize_for_tts(greeting)
-        # Includes Urdu full stop ۔ (U+06D4) and Urdu ? ؟ (U+061F)
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?۔؟])\s+', greeting) if s.strip()]
         full_audio = b""
-        for sentence in sentences:
-            audio = await self._tts.synthesize(sentence)
+        if self.agent.language in ("ur", "ro"):
+            # Single TTS call for Urdu/Roman Urdu — avoids MP3 playback reset gaps between sentences
+            self._tts.set_language(self.agent.language)
+            audio = await self._tts.synthesize(greeting)
             if audio:
-                full_audio += audio
+                full_audio = audio
                 yield ("audio", audio)
+        else:
+            # English/bilingual: sentence-by-sentence for faster first-audio delivery
+            # Includes Urdu full stop ۔ (U+06D4) and Urdu ? ؟ (U+061F)
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?۔؟])\s+', greeting) if s.strip()]
+            for sentence in sentences:
+                # For bilingual greetings, switch TTS voice per sentence based on script.
+                ur_chars = sum(1 for c in sentence if '؀' <= c <= 'ۿ')
+                if ur_chars > 2:
+                    self._tts.set_language("ur")
+                else:
+                    self._tts.set_language("en" if self.agent.language in ("en", "bi") else self.agent.language)
+                audio = await self._tts.synthesize(sentence)
+                if audio:
+                    full_audio += audio
+                    yield ("audio", audio)
+            # Restore correct TTS language after greeting
+            self._tts.set_language(self.agent.language if self.agent.language != "bi" else "en")
 
         # Cache for next call — skip if this is a fallback error message
         _ERROR_SIGNALS = ["تکنیکی مسئلہ", "technical issue", "having trouble", "brief technical"]
@@ -251,10 +269,27 @@ class CallHandler:
             self._tts.set_language(self.agent.language)
 
             # 1. Speech → Text  (GPU, runs in thread pool to not block event loop)
-            loop = asyncio.get_event_loop()
-            transcript = await loop.run_in_executor(
-                None, lambda: self._stt.transcribe(audio_array, language=self.agent.language)
+            # During bilingual language selection: auto-detect so Whisper's language
+            # detection (not just the transcript text) can identify Urdu vs English.
+            in_bilingual_selection = (
+                self.agent._bilingual_mode and not self.agent._language_chosen
             )
+            loop = asyncio.get_event_loop()
+            if in_bilingual_selection:
+                transcript, audio_language = await loop.run_in_executor(
+                    None, lambda: self._stt.transcribe(
+                        audio_array, language=None,
+                        return_language=True, phone_mode=self.phone_mode
+                    )
+                )
+            else:
+                transcript = await loop.run_in_executor(
+                    None, lambda: self._stt.transcribe(
+                        audio_array, language=self.agent.language,
+                        phone_mode=self.phone_mode
+                    )
+                )
+                audio_language = None
             logger.info(f"[{self.session_id}] User: {transcript}")
 
             if not transcript.strip():
@@ -265,18 +300,23 @@ class CallHandler:
             # Tell browser we're thinking
             yield ("json", {"type": "processing"})
 
-            # 2. LLM response (streaming sentences) → TTS per sentence
+            # 2. LLM response → TTS
+            # Urdu: collect all parts then one merged TTS call (avoids MP3 reset gaps).
+            # English: synthesize per sentence for lower latency.
             agent_speech_parts = []
-            async for item in self.agent.process_turn_stream(transcript):
+            async for item in self.agent.process_turn_stream(transcript, audio_language=audio_language):
                 if isinstance(item, str):
                     sentence = _sanitize_for_tts(item.strip())
                     if not sentence:
                         continue
                     logger.debug(f"[{self.session_id}] TTS sentence: {sentence}")
                     agent_speech_parts.append(sentence)
-                    audio_bytes = await self._tts.synthesize(sentence)
-                    if audio_bytes:
-                        yield ("audio", audio_bytes)
+                    if self.agent.language not in ("ur", "ro"):
+                        # English: stream per sentence for low latency
+                        self._tts.set_language(self.agent.language)
+                        audio_bytes = await self._tts.synthesize(sentence)
+                        if audio_bytes:
+                            yield ("audio", audio_bytes)
                 else:
                     # Final result dict — handle action
                     result = item
@@ -284,6 +324,18 @@ class CallHandler:
                     logger.info(f"[{self.session_id}] Action: {action}")
                     if action == "end":
                         self._is_active = False
+                    elif action == "redirect":
+                        port = result.get("data", {}).get("port", 8000)
+                        yield ("json", {"type": "redirect", "port": port})
+                        self._is_active = False
+
+            # Urdu/Roman Urdu: one merged TTS call after LLM stream completes
+            if self.agent.language in ("ur", "ro") and agent_speech_parts:
+                self._tts.set_language(self.agent.language)
+                merged = " ... ".join(agent_speech_parts)
+                audio_bytes = await self._tts.synthesize(merged)
+                if audio_bytes:
+                    yield ("audio", audio_bytes)
 
             # Send full agent speech to transcript
             if agent_speech_parts:
@@ -291,11 +343,12 @@ class CallHandler:
 
         except Exception as e:
             logger.exception(f"[{self.session_id}] Turn error: {e}")
-            fallback_text = (
-                "معذرت، ایک تکنیکی مسئلہ ہے۔ کیا آپ دوبارہ بتا سکتے ہیں؟"
-                if self.language == "ur"
-                else "I'm sorry, I'm having a technical issue. Could you please repeat?"
-            )
+            if self.language == "ur":
+                fallback_text = "سوری ... تکنیکی مسئلہ ہے ... دوبارہ بتائیں"
+            elif self.language == "ro":
+                fallback_text = "Sori ... technical masla hai ... dobara bataein"
+            else:
+                fallback_text = "I'm sorry, I'm having a technical issue. Could you please repeat?"
             fallback = await self._tts.synthesize(fallback_text)
             if fallback:
                 yield ("audio", fallback)

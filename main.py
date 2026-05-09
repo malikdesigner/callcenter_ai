@@ -6,6 +6,7 @@ Usage:
   2. Run:  python main.py
   3. Open: http://localhost:8000  (English)
            http://localhost:8001  (Urdu)
+           http://localhost:8002  (Roman Urdu)
 """
 
 import asyncio
@@ -104,36 +105,42 @@ async def serve():
 
     _free_port(8000)
     _free_port(8001)
+    _free_port(8002)
     _free_port(8003)
 
     # Load models once here — both server startup events will find them already loaded
     # and skip, preventing the concurrent-load OOM that happens when both fire simultaneously.
-    logger.info("Loading models (once for both servers)...")
+    logger.info("Loading models (once for all servers)...")
     CallHandler.load_models()
 
     logger.info("Initializing multi-language support (Single-Process Mode)...")
 
     en_app = create_app("en")
     ur_app = create_app("ur")
+    ro_app = create_app("ro")
     bi_app = create_app("bi")
 
     config_en = uvicorn.Config(en_app, host="0.0.0.0", port=8000,
                                log_level="info", reload=False)
     config_ur = uvicorn.Config(ur_app, host="0.0.0.0", port=8001,
                                log_level="info", reload=False)
+    config_ro = uvicorn.Config(ro_app, host="0.0.0.0", port=8002,
+                               log_level="info", reload=False)
     config_bi = uvicorn.Config(bi_app, host="0.0.0.0", port=8003,
                                log_level="info", reload=False)
 
     server_en = uvicorn.Server(config_en)
     server_ur = uvicorn.Server(config_ur)
+    server_ro = uvicorn.Server(config_ro)
     server_bi = uvicorn.Server(config_bi)
 
-    logger.info("Starting English Version at http://localhost:8000")
-    logger.info("Starting Urdu Version   at http://localhost:8001")
-    logger.info("Starting Bilingual      at http://localhost:8003")
+    logger.info("Starting English Version    at http://localhost:8000")
+    logger.info("Starting Urdu Version       at http://localhost:8001")
+    logger.info("Starting Roman Urdu Version at http://localhost:8002")
+    logger.info("Starting Bilingual          at http://localhost:8003")
     logger.info("All servers running. Press Ctrl+C to stop.")
 
-    await asyncio.gather(server_en.serve(), server_ur.serve(), server_bi.serve())
+    await asyncio.gather(server_en.serve(), server_ur.serve(), server_ro.serve(), server_bi.serve())
 
 
 if __name__ == "__main__":

@@ -332,8 +332,10 @@
     let isCallActive = false;
     let animFrame;
     let nextPlayAt = 0;
-    let agentCurrentNode = null;
+    let agentNodes = [];
     let isSaraPlaying = false;
+    let saraSpeakStartTime = 0;
+    let bargeInCount = 0;
     const sessionId = 'session-' + Date.now();
 
     function setStatus(state, text) {
@@ -366,12 +368,16 @@
             const startAt = Math.max(audioCtx.currentTime + 0.02, nextPlayAt);
             src.start(startAt);
             nextPlayAt = startAt + audioBuf.duration;
-            agentCurrentNode = src;
+            agentNodes.push(src);
             isSaraPlaying = true;
+            saraSpeakStartTime = Date.now();
+            bargeInCount = 0;
             setStatus('active', 'Sara is speaking...');
             src.onended = () => {
-                if (audioCtx.currentTime >= nextPlayAt - 0.05) {
+                agentNodes = agentNodes.filter(n => n !== src);
+                if (agentNodes.length === 0 && audioCtx.currentTime >= nextPlayAt - 0.05) {
                     isSaraPlaying = false;
+                    bargeInCount = 0;
                     setStatus('active', 'Listening...');
                 }
             };
@@ -379,12 +385,11 @@
     }
 
     function stopAgentAudio() {
-        if (agentCurrentNode) {
-            try { agentCurrentNode.stop(); } catch(_) {}
-            agentCurrentNode = null;
-        }
+        agentNodes.forEach(n => { try { n.stop(); } catch(_) {} });
+        agentNodes = [];
         nextPlayAt = 0;
         isSaraPlaying = false;
+        bargeInCount = 0;
     }
 
     async function startCall() {
@@ -426,6 +431,17 @@
                     addMessage('system', 'Call ended.');
                     cleanupCall();
                 }
+                else if (msg.type === 'redirect') {
+                    const label = msg.port === 8001 ? 'اردو سروس' : 'English service';
+                    addMessage('system', `Connecting to ${label}...`);
+                    setStatus('loading', 'Redirecting...');
+                    // Mark autostart so the target page starts the call immediately
+                    localStorage.setItem('sara_autostart', JSON.stringify({ port: msg.port, ts: Date.now() }));
+                    setTimeout(() => {
+                        cleanupCall();
+                        window.location.href = `${location.protocol}//${location.hostname}:${msg.port}`;
+                    }, 2800);
+                }
             }
         };
 
@@ -436,6 +452,18 @@
         processorNode.onaudioprocess = (e) => {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 const f32 = e.inputBuffer.getChannelData(0);
+                // Barge-in: 600ms cooldown + threshold 0.038 + 3-frame debounce
+                // prevents speaker echo from cutting Sara off mid-sentence.
+                if (isSaraPlaying && (Date.now() - saraSpeakStartTime) > 600) {
+                    let sum = 0;
+                    for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
+                    if (Math.sqrt(sum / f32.length) > 0.038) {
+                        bargeInCount++;
+                        if (bargeInCount >= 3) stopAgentAudio();
+                    } else {
+                        bargeInCount = 0;
+                    }
+                }
                 ws.send(f32.buffer.slice(0));
             }
         };
@@ -480,6 +508,20 @@
         }
         draw();
     }
+
+    // Auto-start if redirected from bilingual selector (port 8003)
+    window.addEventListener('load', () => {
+        try {
+            const raw = localStorage.getItem('sara_autostart');
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            const age = Date.now() - data.ts;
+            if (age < 30000 && data.port === parseInt(location.port)) {
+                localStorage.removeItem('sara_autostart');
+                setTimeout(startCall, 600); // brief pause then auto-start
+            }
+        } catch(e) {}
+    });
 </script>
 </body>
 </html>
