@@ -16,6 +16,14 @@ from loguru import logger
 
 _load_lock = threading.Lock()
 
+# Pre-synthesized micro-acknowledgment audio, cached by language.
+_MICRO_ACK_TEXT = {
+    "ur": ["جی...", "اچھا...", "ٹھیک ہے..."],
+    "ro": ["Ji...", "Acha...", "Theek hai..."],
+    "en": ["Mhm...", "Okay...", "Right..."],
+    "bi": ["Mhm...", "Okay..."],
+}
+
 
 def _sanitize_for_tts(text: str) -> str:
     """
@@ -45,6 +53,10 @@ from src.llm.agent import HospitalAgent
 from src.stt.transcriber import Transcriber
 from src.tts.synthesizer import VoiceSynthesizer
 from src.vad.detector import VADDetector
+from src.pipeline.stt_filter import is_valid_input
+from src.dialogue.semantic_validator import is_semantically_valid
+from src.dialogue.policy import DialoguePolicy
+from src.llm.intent import detect_intent
 
 
 class CallHandler:
@@ -58,6 +70,7 @@ class CallHandler:
     _stt: Optional[Transcriber] = None
     _tts: Optional[VoiceSynthesizer] = None
     _models_loaded: bool = False
+    _ack_cache: dict = {}  # {lang: bytes} — micro-ack audio, synthesized once per lang
 
     @classmethod
     def load_models(cls):
@@ -82,12 +95,15 @@ class CallHandler:
         self.language = language
         self.phone_mode = phone_mode          # True for Twilio calls (8 kHz upsampled audio)
         self.agent = HospitalAgent(language=language)
+        self.policy = DialoguePolicy(language=language)
 
         # Per-call audio state
         self._speech_buffer: list = []
         self._last_speech_ts: Optional[float] = None
         self._is_active = False
         self._processing = False
+        self._response_queue = asyncio.Queue()
+        self._turn_task = None
 
         # Rolling pre-speech buffer: captures ~300ms before VAD fires
         # so the first syllable of a word is never clipped
@@ -95,13 +111,25 @@ class CallHandler:
         self._pre_buffer: deque = deque(maxlen=_pre_buf_frames)
 
         # Silence gate: how long of silence triggers processing
-        self._silence_gate = settings.silence_duration
+        # 2.5s for Urdu/Roman to allow thinking pauses, 1.8s for English
+        self._silence_gate = 2.5 if language in ("ur", "ro") else 1.8
 
     @property
     def is_active(self) -> bool:
         return self._is_active
 
     # ── Call lifecycle ────────────────────────────────────────────────────────
+
+
+    async def consume_responses(self):
+        while self._is_active:
+            try:
+                item = await self._response_queue.get()
+                if item is None:
+                    break
+                yield item
+            except asyncio.CancelledError:
+                break
 
     async def start_call(self):
         """
@@ -112,6 +140,7 @@ class CallHandler:
         import os
 
         self.agent.reset()
+        self.policy.reset()
         self.__class__.load_models()
         self._tts.set_language(self.agent.language)  # use agent.language — 'bi' mode starts as 'en'
         self._is_active = True
@@ -122,7 +151,7 @@ class CallHandler:
         logger.info(f"[{self.session_id}] Greeting: {greeting}")
 
         # Signal browser: Sara is about to speak
-        yield ("json", {"type": "agent_speech", "text": greeting})
+        await self._response_queue.put(("json", {"type": "agent_speech", "text": greeting}))
 
         # Check for cached greeting audio
         cache_dir = "data/cache"
@@ -134,7 +163,7 @@ class CallHandler:
         if os.path.exists(cache_path) and not self.agent._bilingual_mode:
             logger.info(f"[{self.session_id}] Using cached greeting audio")
             with open(cache_path, "rb") as f:
-                yield ("audio", f.read())
+                await self._response_queue.put(("audio", f.read()))
             return
 
         greeting = _sanitize_for_tts(greeting)
@@ -145,7 +174,7 @@ class CallHandler:
             audio = await self._tts.synthesize(greeting)
             if audio:
                 full_audio = audio
-                yield ("audio", audio)
+                await self._response_queue.put(("audio", audio))
         else:
             # English/bilingual: sentence-by-sentence for faster first-audio delivery
             # Includes Urdu full stop ۔ (U+06D4) and Urdu ? ؟ (U+061F)
@@ -160,7 +189,7 @@ class CallHandler:
                 audio = await self._tts.synthesize(sentence)
                 if audio:
                     full_audio += audio
-                    yield ("audio", audio)
+                    await self._response_queue.put(("audio", audio))
             # Restore correct TTS language after greeting
             self._tts.set_language(self.agent.language if self.agent.language != "bi" else "en")
 
@@ -176,6 +205,9 @@ class CallHandler:
 
     async def end_call(self):
         self._is_active = False
+        if self._turn_task and not self._turn_task.done():
+            self._turn_task.cancel()
+        await self._response_queue.put(None)
         self._save_call_log()
         self._speech_buffer = []
         self._processing = False
@@ -211,18 +243,30 @@ class CallHandler:
     async def process_audio_chunk(self, chunk: bytes):
         """
         Accept raw PCM bytes (float32, 16 kHz, mono).
-        Yields response WAV bytes sentences when a full user turn is detected.
         """
-        if not self._is_active or self._processing:
+        if not self._is_active:
             return
 
         audio = np.frombuffer(chunk, dtype=np.float32)
         if len(audio) == 0:
             return
 
+        # NEW: PCM Continuity & Normalization
+        # Simple peak normalization if very quiet
+        peak = np.max(np.abs(audio))
+        if 0 < peak < 0.1:  # Boost if extremely quiet
+            audio = audio * (0.1 / peak)
+
         is_speech = self._vad.is_speech(audio)
 
         if is_speech:
+            if self._turn_task and not self._turn_task.done():
+                logger.info(f"[{self.session_id}] Interruption detected! Canceling turn.")
+                self._turn_task.cancel()
+                self._turn_task = None
+                self._processing = False
+                await self._response_queue.put(("json", {"type": "interrupt"}))
+
             if not self._speech_buffer:
                 # Prepend pre-buffer so the start of the word isn't clipped
                 self._speech_buffer.extend(list(self._pre_buffer))
@@ -230,7 +274,13 @@ class CallHandler:
             self._last_speech_ts = time.time()
             return
 
-        # No speech — keep pre-buffer rolling so next speech turn has context
+        # No speech
+        # If we are already in an active turn, we MUST keep appending silence 
+        # to preserve natural intra-word pauses for Whisper!
+        if self._last_speech_ts:
+            self._speech_buffer.extend(audio.tolist())
+
+        # keep pre-buffer rolling so next speech turn has context
         self._pre_buffer.extend(audio.tolist())
 
         # Check for end-of-turn
@@ -244,8 +294,30 @@ class CallHandler:
 
             silence = time.time() - self._last_speech_ts
             if silence >= self._silence_gate:
-                 async for response_block in self._process_turn():
-                     yield response_block
+                 self._turn_task = asyncio.create_task(self._process_turn())
+
+    # ── Micro-acknowledgment ──────────────────────────────────────────────────
+
+    async def _get_ack_audio(self) -> bytes:
+        """
+        Return pre-synthesized micro-ack audio for the current language.
+        Randomly picks one to sound natural.
+        """
+        import random
+        lang = self.agent.language
+        if lang not in self.__class__._ack_cache:
+            self.__class__._ack_cache[lang] = []
+            texts = _MICRO_ACK_TEXT.get(lang, ["Okay..."])
+            tts_lang = "en" if lang == "bi" else lang
+            self._tts.set_language(tts_lang)
+            for text in texts:
+                audio = await self._tts.synthesize(text)
+                if audio:
+                    self.__class__._ack_cache[lang].append(audio)
+            self._tts.set_language(self.agent.language)  # restore
+        
+        cache = self.__class__._ack_cache.get(lang, [])
+        return random.choice(cache) if cache else b""
 
     # ── Turn processing ───────────────────────────────────────────────────────
 
@@ -268,6 +340,8 @@ class CallHandler:
             # Sync TTS to agent's current language (handles mid-call language switches)
             self._tts.set_language(self.agent.language)
 
+
+
             # 1. Speech → Text  (GPU, runs in thread pool to not block event loop)
             # During bilingual language selection: auto-detect so Whisper's language
             # detection (not just the transcript text) can identify Urdu vs English.
@@ -276,17 +350,18 @@ class CallHandler:
             )
             loop = asyncio.get_event_loop()
             if in_bilingual_selection:
-                transcript, audio_language = await loop.run_in_executor(
+                transcript, audio_language, confidence = await loop.run_in_executor(
                     None, lambda: self._stt.transcribe(
                         audio_array, language=None,
-                        return_language=True, phone_mode=self.phone_mode
+                        return_language=True, return_confidence=True,
+                        phone_mode=self.phone_mode
                     )
                 )
             else:
-                transcript = await loop.run_in_executor(
+                transcript, confidence = await loop.run_in_executor(
                     None, lambda: self._stt.transcribe(
                         audio_array, language=self.agent.language,
-                        phone_mode=self.phone_mode
+                        return_confidence=True, phone_mode=self.phone_mode
                     )
                 )
                 audio_language = None
@@ -295,28 +370,74 @@ class CallHandler:
             if not transcript.strip():
                 return
 
-            # Tell browser what the user said
-            yield ("json", {"type": "transcript", "text": transcript})
-            # Tell browser we're thinking
-            yield ("json", {"type": "processing"})
+            # ── ASR confidence gate (STT Filter) ────────────────────────────────────────────
+            is_valid_stt, filter_reason = is_valid_input(transcript, confidence, self.agent.language)
 
-            # 2. LLM response → TTS
-            # Urdu: collect all parts then one merged TTS call (avoids MP3 reset gaps).
-            # English: synthesize per sentence for lower latency.
+            if not is_valid_stt:
+                logger.warning(
+                    f"[{self.session_id}] Garbage transcript filtered "
+                    f"({filter_reason}): '{transcript}'"
+                )
+                lang = self.agent.language
+                if lang == "ur":
+                    repeat_text = "آواز واضح نئیں آئی ... دوبارہ بتا دیجیے"
+                elif lang == "ro":
+                    repeat_text = "Awaaz wazeh nahi aayi ... dobara bataein"
+                else:
+                    repeat_text = "Sorry, I didn't catch that clearly — could you repeat?"
+                self._tts.set_language(lang)
+                repeat_audio = await self._tts.synthesize(repeat_text)
+                if repeat_audio:
+                    await self._response_queue.put(("audio", repeat_audio))
+                return
+
+            # Tell browser what the user said
+            await self._response_queue.put(("json", {"type": "transcript", "text": transcript}))
+            # Tell browser we're thinking
+            await self._response_queue.put(("json", {"type": "processing"}))
+
+            # ── Dialogue Policy & Semantic Validation ─────────────────────────
+            # 1. Detect Intent
+            current_intent = detect_intent(transcript, self.policy.state, self.agent.language)
+            
+            # 2. Semantic Validation
+            is_valid_sem, sem_reason = is_semantically_valid(transcript, self.policy.state, self.agent.language)
+            if not is_valid_sem:
+                current_intent = "GARBAGE"
+                logger.warning(f"[{self.session_id}] Semantic validation failed: {sem_reason}")
+                
+            # 3. Policy Evaluation
+            policy_result = self.policy.evaluate(current_intent, self.agent._collected)
+            
+            if policy_result["is_hard_fallback"]:
+                self._tts.set_language(self.agent.language)
+                fallback_audio = await self._tts.synthesize(policy_result["fallback_text"], policy_tone="empathetic")
+                if fallback_audio:
+                    await self._response_queue.put(("audio", fallback_audio))
+                return
+
+            # 0. Micro-acknowledgment — instant filler word
+            ack = await self._get_ack_audio()
+            if ack:
+                await self._response_queue.put(("audio", ack))
+
+            # 2. LLM response → TTS (Streaming chunk-by-chunk for ultra-low latency)
             agent_speech_parts = []
-            async for item in self.agent.process_turn_stream(transcript, audio_language=audio_language):
+            policy_tone = "empathetic" if "CONFUSED" in str(current_intent) or policy_result["current_state"] == "ASK_SYMPTOM" else None
+            
+            async for item in self.agent.process_turn_stream(transcript, audio_language=audio_language, policy_state=policy_result["current_state"], nlg_constraint=policy_result["nlg_constraint"]):
                 if isinstance(item, str):
                     sentence = _sanitize_for_tts(item.strip())
                     if not sentence:
                         continue
                     logger.debug(f"[{self.session_id}] TTS sentence: {sentence}")
                     agent_speech_parts.append(sentence)
-                    if self.agent.language not in ("ur", "ro"):
-                        # English: stream per sentence for low latency
-                        self._tts.set_language(self.agent.language)
-                        audio_bytes = await self._tts.synthesize(sentence)
-                        if audio_bytes:
-                            yield ("audio", audio_bytes)
+                    
+                    # Stream immediately regardless of language
+                    self._tts.set_language(self.agent.language)
+                    audio_bytes = await self._tts.synthesize(sentence, policy_tone=policy_tone)
+                    if audio_bytes:
+                        await self._response_queue.put(("audio", audio_bytes))
                 else:
                     # Final result dict — handle action
                     result = item
@@ -326,20 +447,12 @@ class CallHandler:
                         self._is_active = False
                     elif action == "redirect":
                         port = result.get("data", {}).get("port", 8000)
-                        yield ("json", {"type": "redirect", "port": port})
+                        await self._response_queue.put(("json", {"type": "redirect", "port": port}))
                         self._is_active = False
-
-            # Urdu/Roman Urdu: one merged TTS call after LLM stream completes
-            if self.agent.language in ("ur", "ro") and agent_speech_parts:
-                self._tts.set_language(self.agent.language)
-                merged = " ... ".join(agent_speech_parts)
-                audio_bytes = await self._tts.synthesize(merged)
-                if audio_bytes:
-                    yield ("audio", audio_bytes)
 
             # Send full agent speech to transcript
             if agent_speech_parts:
-                yield ("json", {"type": "agent_speech", "text": " ".join(agent_speech_parts)})
+                await self._response_queue.put(("json", {"type": "agent_speech", "text": " ".join(agent_speech_parts)}))
 
         except Exception as e:
             logger.exception(f"[{self.session_id}] Turn error: {e}")
@@ -351,6 +464,6 @@ class CallHandler:
                 fallback_text = "I'm sorry, I'm having a technical issue. Could you please repeat?"
             fallback = await self._tts.synthesize(fallback_text)
             if fallback:
-                yield ("audio", fallback)
+                await self._response_queue.put(("audio", fallback))
         finally:
             self._processing = False

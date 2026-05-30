@@ -80,26 +80,41 @@ def create_app(language: str = None) -> FastAPI:
                 await websocket.send_json(payload)
 
         try:
-            async for chunk in handler.start_call():
-                kind, payload = chunk
-                if kind == "audio":
-                    await websocket.send_bytes(payload)
-                elif kind == "json":
-                    await websocket.send_json(payload)
+            await handler.start_call()
 
-            while handler.is_active:
-                try:
-                    data = await websocket.receive()
-                except WebSocketDisconnect:
-                    break
-
-                if "bytes" in data:
-                    async for item in handler.process_audio_chunk(data["bytes"]):
-                        await send(item)
-                elif "text" in data:
-                    msg = json.loads(data["text"])
-                    if msg.get("type") == "end_call":
+            async def receive_loop():
+                while handler.is_active:
+                    try:
+                        data = await websocket.receive()
+                    except WebSocketDisconnect:
                         break
+                    except RuntimeError: # usually when connection is closed
+                        break
+
+                    if "bytes" in data:
+                        await handler.process_audio_chunk(data["bytes"])
+                    elif "text" in data:
+                        try:
+                            msg = json.loads(data["text"])
+                            if msg.get("type") == "end_call":
+                                break
+                        except Exception:
+                            pass
+                await handler.end_call()
+
+            async def send_loop():
+                async for item in handler.consume_responses():
+                    kind, payload = item
+                    try:
+                        if kind == "audio":
+                            await websocket.send_bytes(payload)
+                        elif kind == "json":
+                            await websocket.send_json(payload)
+                    except Exception:
+                        break
+
+            import asyncio
+            await asyncio.gather(receive_loop(), send_loop())
 
             try:
                 await websocket.send_json({"type": "call_ended"})

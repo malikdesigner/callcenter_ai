@@ -253,3 +253,68 @@ def detect_intent(text: str, flow_state: str = "", current_language: str = "en")
             return "provide_name"
 
     return "unclear"
+
+
+# ── Slot semantic validation ───────────────────────────────────────────────────
+
+_DATE_WORDS_UR = {"کل", "پرسوں", "آج", "پیر", "منگل", "بدھ", "جمعرات", "جمعہ", "ہفتہ", "اتوار", "اگلے"}
+_DATE_MONTHS_UR = {"جنوری", "فروری", "مارچ", "اپریل", "مئی", "جون", "جولائی", "اگست", "ستمبر", "اکتوبر", "نومبر", "دسمبر"}
+_DATE_WORDS_EN = {"today", "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "next"}
+_TIME_WORDS_UR = {"بجے", "بج", "صبح", "دوپہر", "شام", "رات"}
+_TIME_WORDS_EN = {"am", "pm", "morning", "afternoon", "evening", "night", "o'clock"}
+_TIME_WORDS_RO = {"baje", "baj", "subah", "dopahar", "sham", "raat", "am", "pm"}
+_DATE_WORDS_RO = {"kal", "parson", "aaj", "somwar", "peer", "mangal", "budh", "jumerat", "juma", "hafta", "itrawar", "agla"}
+
+
+def validate_slot_input(text: str, flow_state: str, language: str = "ur") -> tuple[bool, str]:
+    """
+    Check if user input is semantically plausible for the current slot being collected.
+
+    Returns:
+        (is_valid: bool, reason: str)
+        reason ∈ {"ok", "digit_as_name", "no_date_words", "no_time_words", "too_short"}
+    """
+    t = text.strip()
+    if not t:
+        return False, "too_short"
+
+    digits = "".join(c for c in t if c.isdigit())
+    words  = set(t.split())
+    words_lower = set(t.lower().split())
+
+    if flow_state == "collect_name":
+        # A name must not be all-digit (phone number mistaken for name)
+        if len(digits) >= 6:
+            return False, "digit_as_name"
+        word_list = [w for w in t.split() if w]
+        if not word_list:
+            return False, "too_short"
+        return True, "ok"
+
+    if flow_state == "collect_date":
+        if words & _DATE_WORDS_UR or words & _DATE_MONTHS_UR:
+            return True, "ok"
+        if words_lower & _DATE_WORDS_EN:
+            return True, "ok"
+        if language == "ro" and words_lower & _DATE_WORDS_RO:
+            return True, "ok"
+        if _DIGIT_DATE_RE.search(t):
+            return True, "ok"
+        # Bare digits might be a day number e.g. "11" → valid enough
+        if digits and len(digits) <= 2:
+            return True, "ok"
+        return False, "no_date_words"
+
+    if flow_state == "collect_time":
+        if words & _TIME_WORDS_UR:
+            return True, "ok"
+        if words_lower & _TIME_WORDS_EN:
+            return True, "ok"
+        if language == "ro" and words_lower & _TIME_WORDS_RO:
+            return True, "ok"
+        if digits:
+            return True, "ok"  # "9", "11:30", "ساڑھے نو" etc.
+        return False, "no_time_words"
+
+    # All other states (symptoms, greeting, confirm, unclear): don't gate
+    return True, "ok"

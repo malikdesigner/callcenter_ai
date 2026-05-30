@@ -17,7 +17,7 @@ from src.appointment.booking import (
     resolve_department,
 )
 from src.appointment.models import Appointment, Doctor, Department, engine
-from src.llm.intent import detect_intent, detect_language_switch, detect_language_preference, detect_symptom_department
+from src.llm.intent import detect_intent, detect_language_switch, detect_language_preference, detect_symptom_department, validate_slot_input
 
 # ── Role & Strict Flow ────────────────────────────────────────────────────────
 
@@ -84,20 +84,34 @@ CORRECTING → accept + re-collect:
 
 ━━━ OUTPUT RULES ━━━
 1. Urdu script only (ا ب پ...). Zero English or Roman Urdu.
-2. Max 8-10 words. Very short — like a real call-center agent.
-3. Pauses with ... only. NO ۔ . ! ? ، ,
-4. Tone: جی سر ... اچھا جی ... ٹھیک ہے ... ایک سیکنڈ جی
-5. Phonetic forms: آپکا | آپکو | آپکے | نئیں | ڈاکڑ | موبایل
-6. NO formal: براہ کرم / معافی / تکلیف
+2. NATURAL CONVERSATIONAL TONE: Talk like a real, polite Pakistani receptionist. Use complete, warm sentences.
+   ✓ السلام علیکم، میں سارہ بات کر رہی ہوں۔ بتائیے میں آپ کی کیا مدد کر سکتی ہوں؟
+   ✓ جی بالکل، کوئی مسئلہ نہیں۔ آپ کا فون نمبر کیا ہے؟
+   ✗ جناب میں آپ کی کیا مدد کرسکتی ہوں (too formal)
+   ✗ جی سر ... کیا مسئلہ ہے (too abrupt/robotic)
+3. Punctuation: Use proper punctuation (۔ ؟ ،) so the TTS engine can pace the speech naturally.
+4. Empathy: Show empathy when hearing symptoms. "اچھا، مجھے سن کر افسوس ہوا۔ کوئی فکر کی بات نہیں..."
+5. Tone words: جی بالکل، ضرور، فکر نہ کریں، مہربانی، شکریہ۔
+6. BANNED words (Too formal/bookish): براہ کرم / معافی / جناب / محترم / لہذا / اپوائنٹمنٹ۔
 
-BOOKING EXAMPLES:
-سلام:    السلام علیکم ... میں سارہ ہوں ... آپکا نام کیا ہے
-فون:     اچھا جی [نام] صاحب ... موبایل نمبر بتائیں
-تکلیف:  اچھا جی ... ڈاکڑ [نام] ہیں اس کے لیے ... وقت لوں
-تاریخ:  ٹھیک ہے ... کونسے دن آنا ہے
-وقت:    یہ وقت ہیں ... [سلاٹس] ... کونسا ٹھیک ہے
-تصدیق: [نام] صاحب ... ڈاکڑ [نام] ... [تاریخ] ... [وقت] پر ... کنفرم کروں
-اختتام: جی ... شکریہ ... اللہ حافظ
+VARIED FILLERS — rotate naturally:
+  اچھا | جی بالکل | ٹھیک ہے | میں سمجھ سکتی ہوں | ضرور
+
+UNCLEAR AUDIO — if user speech is unrecognizable or nonsensical:
+  → معذرت، مجھے آپ کی آواز واضح نہیں آئی۔ کیا آپ دہرا سکتے ہیں؟
+WRONG TYPE — if user gives digits when you asked for name, or gibberish for date:
+  → [acknowledge politely] ... براہ مہربانی [نام/تاریخ/وقت] دوبارہ بتائیں۔
+NAME RULE — patient_name must be a real name (1-4 words, no digit strings).
+SLOTS RULE — NEVER list more than 3 time slots. Pick the 3 most convenient ones.
+
+CONVERSATIONAL EXAMPLES (copy this natural style exactly):
+سلام:    السلام علیکم، میں سارہ بات کر رہی ہوں۔ بتائیے میں آپ کی کیا مدد کر سکتی ہوں؟
+فون:     جی بالکل۔ آپ کا مکمل فون نمبر کیا ہو گا؟
+تکلیف:  اچھا، فکر نہ کریں۔ ڈاکٹر [نام] ان مسائل کے ماہر ہیں۔ کیا میں ان کے ساتھ آپ کا وقت بک کر دوں؟
+تاریخ:  ضرور۔ آپ کس دن آنا پسند کریں گے؟
+وقت:    ٹھیک ہے۔ میرے پاس یہ اوقات دستیاب ہیں... [3 سلاٹس]۔ ان میں سے کون سا وقت آپ کے لیے بہتر رہے گا؟
+تصدیق:  ٹھیک ہے [نام] صاحب۔ میں نے ڈاکٹر [نام] کے ساتھ آپ کا وقت [تاریخ] کو [وقت] کے لیے بک کر دیا ہے۔ کیا میں اسے کنفرم کر دوں؟
+اختتام: بہت شکریہ آپ کا۔ اللہ حافظ۔
 
 JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
 
@@ -141,20 +155,34 @@ CORRECTING → accept + re-collect:
 
 ━━━ OUTPUT RULES ━━━
 1. Roman Urdu only (Latin script). Zero Urdu script or English.
-2. Max 8-10 words. Very short — like a real call-center agent.
-3. Pauses with ... only. NO periods, commas, exclamation marks.
-4. Tone: ji sir ... acha ji ... theek hai ... ek second ji
-5. Common forms: aapka | aapko | nahi | doctor | mobile
-6. NO formal: meherbani / maafi / izaazat
+2. NATURAL CONVERSATIONAL TONE: Talk like a real, polite Pakistani receptionist. Use complete, warm sentences.
+   ✓ Assalam o alaikum, main Sara baat kar rahi hoon. Bataiye main aapki kya madad kar sakti hoon?
+   ✓ Ji bilkul, koi masla nahi. Aapka phone number kya hai?
+   ✗ Janab main aapki kya madad kar sakti hoon (too formal)
+   ✗ Ji sir ... kya masla hai (too abrupt/robotic)
+3. Punctuation: Use proper punctuation (. ? ,) so the TTS engine can pace the speech naturally.
+4. Empathy: Show empathy when hearing symptoms. "Acha, mujhe sun kar afsos hua. Koi fikar ki baat nahi..."
+5. Tone words: Ji bilkul, zaroor, fikar na karein, meherbani, shukriya.
+6. BANNED (Too formal/bookish): bara-e-meherbani / maafi / janab / muhtaram / lihaza / appointment.
 
-BOOKING EXAMPLES:
-Salam:    Assalam o alaikum ... main Sara hoon ... aapka naam
-Phone:    Acha ji [naam] sahab ... mobile number bataein
-Takleef:  Acha ji ... Dr [naam] hain is ke liye ... waqt loon
-Date:     Theek hai ... konse din aana hai
-Waqt:     Yeh waqt hain ... [slots] ... konsa theek hai
-Confirm:  [naam] sahab ... Dr [naam] ... [date] ... [waqt] par ... confirm karoon
-Ikhtitaam: Ji ... shukriya ... Allah hafiz
+VARIED FILLERS — rotate naturally:
+  acha | ji bilkul | theek hai | main samajh sakti hoon | zaroor
+
+UNCLEAR AUDIO — if user speech is unrecognizable or nonsensical:
+  → Maazrat, mujhe aapki awaaz wazeh nahi aayi. Kya aap dohra sakte hain?
+WRONG TYPE — digits when asked for name, or gibberish for date:
+  → [acknowledge politely] ... meherbani farma kar [naam/date/waqt] dobara bataein.
+NAME RULE — patient_name must be a real name (1-4 words, no digit strings only).
+SLOTS RULE — NEVER list more than 3 time slots. Pick the 3 most convenient ones.
+
+CONVERSATIONAL EXAMPLES (copy this natural style exactly):
+Salam:    Assalam o alaikum, main Sara baat kar rahi hoon. Bataiye main aapki kya madad kar sakti hoon?
+Phone:    Ji bilkul. Aapka mukammal phone number kya hoga?
+Takleef:  Acha, fikar na karein. Dr [naam] is ke mahir hain. Kya main unke sath aapka waqt book kar doon?
+Date:     Zaroor. Aap kis din aana pasand karein ge?
+Waqt:     Theek hai. Mere paas yeh waqt hain... [3 slots]. In mein se konsa waqt aap ke liye behtar rahe ga?
+Confirm:  Theek hai [naam] sahab. Main ne Dr [naam] ke sath aapka waqt [date] ko [waqt] ke liye book kar diya hai. Kya main isay confirm kar doon?
+Ikhtitaam: Bahut shukriya aapka. Allah hafiz.
 
 JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
 
@@ -238,8 +266,8 @@ class HospitalAgent:
         result = await self._chat(prompt)
 
         fallback_en = f"Thank you for calling {settings.hospital_name}, this is {settings.receptionist_name}. How can I help you?"
-        fallback_ur = f"السلام علیکم ... میں سارہ ہوں {settings.hospital_name} سے ... آپکا نام کیا ہے"
-        fallback_ro = f"Assalam o alaikum ... main Sara hoon {settings.hospital_name} se ... aapka naam"
+        fallback_ur = f"السلام علیکم، میں سارہ بات کر رہی ہوں۔ بتائیے میں آپ کی کیا مدد کر سکتی ہوں؟"
+        fallback_ro = f"Assalam o alaikum, main Sara baat kar rahi hoon. Bataiye main aapki kya madad kar sakti hoon?"
 
         if self.language == "ur":
             return result.get("speech", fallback_ur)
@@ -270,7 +298,7 @@ class HospitalAgent:
 
         return result
 
-    async def process_turn_stream(self, user_text: str, audio_language: str = None):
+    async def process_turn_stream(self, user_text: str, audio_language: str = None, policy_state: str = "", nlg_constraint: str = ""):
         """
         Yields strings (sentences) as they are generated by the LLM.
         The very last item yielded will be the complete response dict.
@@ -397,7 +425,7 @@ class HospitalAgent:
                 self._collected.pop("doctor_name", None)
                 logger.debug("[Agent] Correction detected — cleared doctor_name")
 
-        async for content in self._chat_stream(user_text):
+        async for content in self._chat_stream(user_text, policy_state=policy_state, nlg_constraint=nlg_constraint):
             full_json_str += content
 
             match = re.search(r'"speech"\s*:\s*"(.*?)"', full_json_str, re.DOTALL)
@@ -621,6 +649,15 @@ class HospitalAgent:
             if resolved:
                 self._collected["department"] = resolved
 
+        # ── Name validation: reject digit strings stored as names ────────────
+        # Happens when Whisper transcribes a phone number spoken during name collection.
+        raw_name = self._collected.get("patient_name", "")
+        if raw_name:
+            name_digits = "".join(c for c in raw_name if c.isdigit())
+            if len(name_digits) >= 6:
+                logger.warning(f"[Agent] Rejecting digit-string as name: '{raw_name}'")
+                self._collected.pop("patient_name", None)
+
         # ── Phone normalisation ──────────────────────────────────────────────
         # Strip Urdu comma separators (،), spaces, dashes — keep digits only
         raw_phone = self._collected.get("patient_phone", "")
@@ -740,7 +777,7 @@ class HospitalAgent:
 
         return "ANSWERING"
 
-    def _build_context_injection(self, user_text: str = "") -> str:
+    def _build_context_injection(self, user_text: str = "", policy_state: str = "", nlg_constraint: str = "") -> str:
         """
         Inject live DB availability and collected state into the system prompt.
         - If doctor + date are both known → show exact free slots for that combo.
@@ -775,6 +812,11 @@ class HospitalAgent:
 
         if self._collected:
             lines.append(f"CURRENT_STATE: {json.dumps(self._collected)}")
+            
+        if policy_state:
+            lines.append(f"POLICY_STATE: {policy_state}")
+        if nlg_constraint:
+            lines.append(f"POLICY_CONSTRAINT: {nlg_constraint}\nCRITICAL RULE: You MUST follow this policy constraint strictly.")
 
         missing = self._get_missing_requirements()
         if missing:
@@ -792,6 +834,10 @@ class HospitalAgent:
                     lines.append("RULE: Acknowledge what they said, then ask for the missing info in a natural, non-repetitive way.")
         else:
             lines.append("ALL_INFO_COLLECTED: All info ready — proceed to confirmation.")
+
+        if self.language == "ur":
+            lines.append("CRITICAL LANGUAGE RULE: Respond in highly natural, fluent Pakistani Urdu. Do NOT translate English phrases literally. Use proper Urdu grammar, sentence structure, and vocabulary as a real human receptionist would.")
+
 
         # ── Repetition guard ──────────────────────────────────────────────────
         if self._last_asked_state and self._last_asked_state == self._flow_state:
@@ -826,16 +872,45 @@ class HospitalAgent:
         raw_date = self._collected.get("appointment_date", "")
         requested_time = self._collected.get("appointment_time", "")
 
+        # ── Slot semantic validation ──────────────────────────────────────────
+        # If the user's response doesn't match what was asked for, inject a hint
+        # so the LLM asks them to clarify rather than silently accepting garbage.
+        if user_text and self._flow_state in ("collect_name", "collect_date", "collect_time"):
+            is_valid, reason = validate_slot_input(user_text, self._flow_state, self.language)
+            if not is_valid:
+                _SLOT_LABELS = {
+                    "collect_name": {"ur": "نام", "ro": "naam", "en": "name"},
+                    "collect_date": {"ur": "تاریخ", "ro": "date", "en": "date"},
+                    "collect_time": {"ur": "وقت", "ro": "waqt", "en": "time"},
+                }
+                label = _SLOT_LABELS.get(self._flow_state, {}).get(self.language, self._flow_state)
+                if reason == "digit_as_name":
+                    lines.append(
+                        f"SLOT_MISMATCH: You asked for the patient's name but received "
+                        f"'{user_text}' which looks like a phone number, not a name. "
+                        f"Do NOT store this as the name. Ask for their name again clearly."
+                    )
+                elif reason == "no_date_words":
+                    lines.append(
+                        f"SLOT_MISMATCH: You asked for a date/day but '{user_text}' "
+                        f"contains no recognizable date. Ask them to repeat the day clearly."
+                    )
+                elif reason == "no_time_words":
+                    lines.append(
+                        f"SLOT_MISMATCH: You asked for a time but '{user_text}' "
+                        f"contains no recognizable time. Ask them to repeat which time slot."
+                    )
+
         # ── Case 1: Doctor + Date known → show exact slots from DB ───────────
         if doctor and raw_date:
             try:
                 appt_date = _date.fromisoformat(raw_date)
                 available_slots = self.booking.get_available_slots(doctor, appt_date)
                 if available_slots:
-                    slots_str = ", ".join(available_slots)
+                    slots_str = ", ".join(available_slots[:4])  # cap at 4 — never read 15 slots aloud
                     lines.append(
                         f"AVAILABLE_SLOTS for {doctor} on {raw_date}: {slots_str}\n"
-                        f"STRICT RULE: You MUST only offer slots from this list. "
+                        f"STRICT RULE: Offer AT MOST 3 specific slots. Do NOT list all of them. "
                         f"Do NOT invent or suggest any other time."
                     )
                     # Warn if the user's requested time is not in the available list
@@ -936,14 +1011,14 @@ class HospitalAgent:
 
         return result
 
-    async def _chat_stream(self, user_input: str):
+    async def _chat_stream(self, user_input: str, policy_state: str = "", nlg_constraint: str = ""):
         """
         Yields raw content delta strings (str) from the LLM.
         Priority: Gemini → Groq → Ollama (local) → HuggingFace.
         Add GEMINI_API_KEY or GROQ_API_KEY to .env to enable cloud providers.
         """
         system = _build_system_prompt(self.language)
-        ctx = self._build_context_injection(user_input)
+        ctx = self._build_context_injection(user_input, policy_state, nlg_constraint)
         if ctx:
             system += f"\n\n--- LIVE CONTEXT ---\n{ctx}"
 

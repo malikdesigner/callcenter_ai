@@ -67,13 +67,16 @@ class Transcriber:
         self._language = lang
 
     def transcribe(self, audio: np.ndarray, language: str = None, sample_rate: int = 16000,
-                   return_language: bool = False, phone_mode: bool = False):
+                   return_language: bool = False, return_confidence: bool = False,
+                   phone_mode: bool = False):
         """
         Transcribe a numpy float32 audio array.
         Audio must be mono, 16 kHz, float32 in range [-1, 1].
         Pass language explicitly to avoid race conditions when shared across sessions.
         phone_mode=True uses looser thresholds for 8 kHz upsampled phone audio.
-        If return_language=True, returns (text, detected_lang) tuple instead of just text.
+        If return_language=True, returns (text, detected_lang) tuple.
+        If return_confidence=True, returns (text, {"avg_logprob": float, "no_speech_prob": float}).
+        Both flags may be combined: returns (text, detected_lang, confidence_dict).
         """
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
@@ -112,20 +115,38 @@ class Transcriber:
         )
 
         parts = []
+        seg_logprobs: list[float] = []
+        seg_no_speech: list[float] = []
         for seg in segments:
             t = seg.text.strip()
             if t and not t.startswith("[") and not t.startswith("("):
                 parts.append(t)
+            seg_logprobs.append(seg.avg_logprob)
+            seg_no_speech.append(seg.no_speech_prob)
 
         text = " ".join(parts).strip()
+
+        # Segment-level confidence metrics (averaged across all segments)
+        avg_logprob   = sum(seg_logprobs) / len(seg_logprobs) if seg_logprobs else -1.5
+        max_no_speech = max(seg_no_speech) if seg_no_speech else 1.0
+        confidence = {"avg_logprob": avg_logprob, "no_speech_prob": max_no_speech}
 
         # Apply language-specific post-processing corrections
         if lang == "ur" and text:
             text = _normalize_urdu(text)
 
-        logger.debug(f"[STT] transcript='{text}' lang={info.language} prob={info.language_probability:.2f}")
+        logger.debug(
+            f"[STT] transcript='{text}' lang={info.language} "
+            f"prob={info.language_probability:.2f} "
+            f"logprob={avg_logprob:.2f} no_speech={max_no_speech:.2f}"
+        )
+
+        if return_language and return_confidence:
+            return text, info.language, confidence
         if return_language:
             return text, info.language
+        if return_confidence:
+            return text, confidence
         return text
 
     def transcribe_file(self, path: str) -> str:

@@ -13,6 +13,11 @@ import asyncio
 import os
 import sys
 
+# CRITICAL FIX for Windows cuDNN Error 127:
+# We MUST import torch before ANY other ML library (like faster_whisper/ctranslate2)
+# is imported. Otherwise, ctranslate2 loads a conflicting cuDNN DLL first!
+import torch
+
 import uvicorn
 from loguru import logger
 

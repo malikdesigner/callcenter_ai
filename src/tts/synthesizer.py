@@ -28,6 +28,7 @@ import httpx
 import edge_tts
 from loguru import logger
 from config.settings import settings
+from src.tts.speech_formatter import formatter as _formatter, TONE_PROSODY
 
 
 # ── Urdu phonetic normalisation map ──────────────────────────────────────────
@@ -85,9 +86,10 @@ class VoiceSynthesizer:
         )
 
     def load(self):
-        pass  # Edge-TTS is cloud-based; nothing to pre-load.
-        # XTTS v2 voice cloning is available via _synthesize_xtts() but requires GPU
-        # for real-time use (CPU RTF ~2.6× means 37s wait for a 3-sentence greeting).
+        """Load local models into VRAM."""
+        # XTTS v2 disabled per user feedback (voice distortion).
+        # Reverting to the highly optimized Edge-TTS (UzmaNeural).
+        self._xtts = None
 
     def set_language(self, lang: str):
         self._language = lang
@@ -103,12 +105,18 @@ class VoiceSynthesizer:
         ur_count = sum(1 for c in non_space if '؀' <= c <= 'ۿ')
         return ur_count / len(non_space) >= 0.25
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, policy_tone: str = None) -> bytes:
         """
         Convert text → MP3 bytes.
         Priority: ElevenLabs (if configured) → Edge-TTS.
-        Urdu script detection is script-based, not just _language-based, so that
-        misfires in language detection cannot route Urdu text to the wrong voice.
+
+        Pipeline:
+          1. SpeechFormatter: formal→spoken rewrite + tone detection
+          2. Language-specific TTS prep: punctuation → ..., phonetic normalization
+          3. ElevenLabs or Edge-TTS (with tone-adjusted rate/pitch)
+
+        Urdu script detection is script-based (not just _language-based) so
+        language-detection misfires cannot route Urdu text to JennyNeural.
         """
         text = text.strip()
         if not text:
@@ -116,6 +124,13 @@ class VoiceSynthesizer:
 
         is_urdu = self._language == "ur" or self._is_urdu_text(text)
         is_roman_urdu = self._language == "ro" and not is_urdu
+
+        # ── Speech formatting: formal→spoken rewrite + tone classification ────
+        lang_for_fmt = "ur" if is_urdu else ("ro" if is_roman_urdu else "en")
+        text, tone = _formatter.format(text, lang_for_fmt, policy_tone=policy_tone)
+        logger.debug(f"[TTS] Tone={tone} | {text[:60]}…")
+
+        # ── Language-specific TTS prep (punctuation + phonetics) ──────────────
         if is_urdu:
             text = self._prepare_urdu_for_tts(text)
         elif is_roman_urdu:
@@ -132,28 +147,36 @@ class VoiceSynthesizer:
             audio = await self._synthesize_elevenlabs(text, el_key, el_voice)
             if audio:
                 return audio
-            logger.warning("[TTS] ElevenLabs failed — falling back to Edge-TTS")
+            logger.warning("[TTS] ElevenLabs failed — falling back")
+
+        # ── XTTS v2 (Local Voice Cloning) ─────────────────────────────────────
+        if self._xtts:
+            # XTTS requires 'hi' for Roman Urdu and 'en' for English
+            logger.debug(f"[TTS] XTTS v2 Local Cloning | tone={tone}")
+            audio = await self._synthesize_xtts(text)
+            if audio:
+                return audio
+            logger.warning("[TTS] XTTS failed — falling back to Edge-TTS")
 
         # ── Edge-TTS ──────────────────────────────────────────────────────────
         if is_urdu or is_roman_urdu:
-            # Urdu/Roman Urdu: single call — no clause splitting to avoid MP3 gaps.
             lang_key = "ur" if is_urdu else "ro"
             logger.debug(
-                f"[TTS] Edge-TTS {lang_key.upper()} | {VOICE_CONFIG[lang_key]['voice']} | {text[:60]}…"
+                f"[TTS] Edge-TTS {lang_key.upper()} | {VOICE_CONFIG[lang_key]['voice']} | tone={tone}"
             )
-            return await self._synthesize_raw(text)
+            return await self._synthesize_raw(text, tone=tone)
 
         # English: clause-splitting for natural comma pauses
         clauses = self._split_clauses(text)
         logger.debug(
             f"[TTS] Edge-TTS EN | {VOICE_CONFIG['en']['voice']} | "
-            f"{len(clauses)} clause(s) | {text[:60]}…"
+            f"{len(clauses)} clause(s) | tone={tone}"
         )
         if len(clauses) == 1:
-            return await self._synthesize_raw(clauses[0])
+            return await self._synthesize_raw(clauses[0], tone=tone)
 
         results = await asyncio.gather(
-            *[self._synthesize_raw(c) for c in clauses],
+            *[self._synthesize_raw(c, tone=tone) for c in clauses],
             return_exceptions=True,
         )
         combined = b""
@@ -175,14 +198,9 @@ class VoiceSynthesizer:
     def _prepare_urdu_for_tts(text: str) -> str:
         """
         Prepare Urdu text for UzmaNeural Edge-TTS:
-        1. Replace all hard punctuation with ... (three-dot soft pause).
-           Edge-TTS creates robotic 250ms halts on ۔/./!/? — ellipsis is much shorter.
-        2. Apply phonetic normalisation for natural Pakistani pronunciation.
+        Apply phonetic normalisation for natural Pakistani pronunciation.
+        We now preserve natural punctuation so the TTS engine can pause naturally.
         """
-        # All hard punctuation → soft pause (ellipsis)
-        text = re.sub(r'[۔\.!؟\?،,،]', ' ... ', text)
-        # Collapse consecutive ellipses into one
-        text = re.sub(r'(\s*\.\.\.\s*){2,}', ' ... ', text)
         # Normalise whitespace
         text = re.sub(r'\s+', ' ', text).strip()
         # Drop trailing ellipsis (sounds unnatural at the very end)
@@ -275,22 +293,23 @@ class VoiceSynthesizer:
         return b""
 
     async def _synthesize_xtts(self, text: str) -> bytes:
-        """Synthesise via XTTS v2 (CPU, voice cloning from voices/receptionist.wav)."""
+        """Synthesise via XTTS v2 (CPU/GPU, voice cloning from voices/receptionist.wav)."""
+        lang = "en" if self._language == "en" and not self._is_urdu_text(text) else "hi"
         try:
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, self._xtts_sync, text)
+            return await loop.run_in_executor(None, self._xtts_sync, text, lang)
         except Exception as e:
             logger.error(f"[TTS] XTTS v2 synthesis failed: {e}")
             return b""
 
-    def _xtts_sync(self, text: str) -> bytes:
+    def _xtts_sync(self, text: str, lang: str) -> bytes:
         """Blocking XTTS v2 generation — called in executor thread."""
         import io
         import numpy as np
         wav = self._xtts.tts(
             text=text,
             speaker_wav="voices/receptionist.wav",
-            language="hi",  # "hi" handles Roman Urdu with South Asian accent
+            language=lang,
         )
         buf = io.BytesIO()
         import scipy.io.wavfile as wavfile
@@ -298,18 +317,24 @@ class VoiceSynthesizer:
         buf.seek(0)
         return buf.read()
 
-    async def _synthesize_raw(self, text: str, _attempt: int = 0) -> bytes:
+    async def _synthesize_raw(self, text: str, _attempt: int = 0, tone: str = "neutral") -> bytes:
         """Synthesise a single text segment via Edge-TTS. Retries once on failure."""
         # Use Urdu voice whenever the text itself is Urdu script, regardless of
         # _language setting — guards against language-detection misfires.
         lang = "ur" if self._is_urdu_text(text) else self._language
         cfg = VOICE_CONFIG.get(lang, VOICE_CONFIG["en"])
+
+        # Tone-based prosody: override rate/pitch per sentence type.
+        tone_cfg = TONE_PROSODY.get(lang, {}).get(tone, {})
+        rate  = tone_cfg.get("rate",  cfg["rate"])
+        pitch = tone_cfg.get("pitch", cfg["pitch"])
+
         try:
             communicate = edge_tts.Communicate(
                 text,
                 cfg["voice"],
-                rate=cfg["rate"],
-                pitch=cfg["pitch"],
+                rate=rate,
+                pitch=pitch,
                 volume=cfg["volume"],
             )
             buf = io.BytesIO()
@@ -325,6 +350,6 @@ class VoiceSynthesizer:
             if _attempt == 0:
                 logger.warning(f"[TTS] Edge-TTS attempt 1 failed, retrying: {e}")
                 await asyncio.sleep(0.4)
-                return await self._synthesize_raw(text, _attempt=1)
+                return await self._synthesize_raw(text, _attempt=1, tone=tone)
             logger.error(f"[TTS] Edge-TTS failed: {e}")
             return b""
