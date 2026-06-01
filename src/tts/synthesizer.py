@@ -78,18 +78,23 @@ _MIN_CLAUSE_LEN = 6
 class VoiceSynthesizer:
     def __init__(self):
         self._language = "en"
-        self._xtts = None  # reserved for future GPU use via _synthesize_xtts()
+        self._xtts = None
+        # Kokoro for English — high quality, local, free
+        from src.tts.kokoro_engine import get_kokoro
+        from config.settings import settings as _s
+        self._kokoro = get_kokoro(voice=_s.kokoro_voice, speed=_s.kokoro_speed)
+        if self._kokoro.available:
+            logger.info(f"[TTS] Kokoro loaded — voice={_s.kokoro_voice} (English/Roman Urdu)")
+        else:
+            logger.info("[TTS] Kokoro unavailable — using Edge-TTS for English")
         logger.info(
             f"VoiceSynthesizer ready — "
-            f"EN: {VOICE_CONFIG['en']['voice']} | "
+            f"EN: {'Kokoro' if self._kokoro.available else VOICE_CONFIG['en']['voice']} | "
             f"UR: {VOICE_CONFIG['ur']['voice']} (+5% rate, -2Hz pitch)"
         )
 
     def load(self):
-        """Load local models into VRAM."""
-        # XTTS v2 disabled per user feedback (voice distortion).
-        # Reverting to the highly optimized Edge-TTS (UzmaNeural).
-        self._xtts = None
+        pass  # Kokoro loaded in __init__; Edge-TTS is cloud-based.
 
     def set_language(self, lang: str):
         self._language = lang
@@ -136,7 +141,16 @@ class VoiceSynthesizer:
         elif is_roman_urdu:
             text = self._prepare_roman_urdu_for_tts(text)
 
-        # ── ElevenLabs (primary when configured) ──────────────────────────────
+        # ── Kokoro (English + Roman Urdu, local, high quality) ───────────────
+        if not is_urdu and self._kokoro.available:
+            lang_for_kokoro = "ro" if is_roman_urdu else "en"
+            audio = await self._kokoro.synthesize(text, lang=lang_for_kokoro)
+            if audio:
+                logger.debug(f"[TTS] Kokoro {lang_for_kokoro.upper()} | {len(audio)} bytes | {text[:50]}…")
+                return audio
+            logger.warning("[TTS] Kokoro returned empty — falling back to Edge-TTS")
+
+        # ── ElevenLabs (primary when configured, Urdu only) ───────────────────
         el_key = settings.elevenlabs_api_key
         el_voice = (
             settings.elevenlabs_voice_id_ur

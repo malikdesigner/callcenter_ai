@@ -1,0 +1,54 @@
+faqs:
+  - q: "What are the hospital timings?"
+    q_ur: "ہسپتال کے اوقات کیا ہیں؟"
+    a: "OPD is open Monday to Saturday, 8 AM to 8 PM. Emergency is open 24/7."
+    a_ur: "OPD پیر سے ہفتہ صبح 8 سے رات 8 بجے تک کھلا ہے۔ ایمرجنسی چوبیس گھنٹے کھلی ہے۔"
+    category: hours
+
+  - q: "How do I book an appointment?"
+    q_ur: "اپوائنٹمنٹ کیسے بکنگ کریں؟"
+    a: "You can book by calling us, or I can book one for you right now. Just tell me your name and which doctor you need."
+    a_ur: "آپ ہمیں فون کر سکتے ہیں، یا میں ابھی آپکی بکنگ کر سکتی ہوں۔ بس اپنا نام اور ڈاکٹر بتائیں۔"
+    category: booking
+
+  - q: "Is there parking available?"
+    q_ur: "پارکنگ ہے؟"
+    a: "Yes, free parking is available in our main lot. Entry from Gate 2."
+    a_ur: "جی، مفت پارکنگ دستیاب ہے۔ گیٹ 2 سے داخل ہوں۔"
+    category: facilities
+
+  - q: "What is the consultation fee?"
+    q_ur: "فیس کتنی ہے؟"
+    a: "Fees vary by specialist: General Physician Rs. 1000, Specialists Rs. 1500–3000. I can tell you the exact fee for any doctor."
+    a_ur: "فیس ڈاکٹر کے حساب سے ہے۔ جنرل ڈاکٹر 1000 روپے، ماہرین 1500 سے 3000 روپے۔ کسی بھی ڈاکٹر کی فیس بتا سکتی ہوں۔"
+    category: fees
+
+  - q: "Do you have lab tests?"
+    q_ur: "لیب ٹیسٹ ہوتے ہیں؟"
+    a: "Yes, our diagnostic lab is open 7 AM to 10 PM daily. Reports are ready in 4–6 hours."
+    a_ur: "جی، لیب صبح 7 سے رات 10 بجے تک کھلی ہے۔ رپورٹ 4 سے 6 گھنٹے میں تیار ہو جاتی ہے۔"
+    category: services
+
+  - q: "What is the emergency number?"
+    q_ur: "ایمرجنسی نمبر کیا ہے؟"
+    a: "Our emergency number is +92-42-9999999, available 24/7."
+    a_ur: "ایمرجنسی نمبر +92-42-9999999 ہے، چوبیس گھنٹے دستیاب ہے۔"
+    category: emergency
+
+  - q: "Do you accept Sehat Sahulat card?"
+    q_ur: "صحت سہولت کارڈ چلتا ہے؟"
+    a: "Yes, we accept Sehat Sahulat, EFU, Jubilee, State Life, and most corporate panels."
+    a_ur: "جی، صحت سہولت، EFU، Jubilee، State Life اور کارپوریٹ پینل قبول ہوتے ہیں۔"
+    category: insurance
+
+  - q: "Can I cancel my appointment?"
+    q_ur: "اپوائنٹمنٹ کینسل ہو سکتی ہے؟"
+    a: "Yes, you can cancel up to 2 hours before your appointment. Tell me your booking ID or name and I'll cancel it."
+    a_ur: "جی، اپوائنٹمنٹ سے 2 گھنٹے پہلے تک کینسل ہو سکتی ہے۔ بکنگ نمبر یا نام بتائیں، میں کر دیتی ہوں۔"
+    category: booking
+
+  - q: "Is there a pharmacy?"
+    q_ur: "دوائی مل سکتی ہے؟"
+    a: "Yes, our 24/7 pharmacy is at the Ground Floor. Prescription and OTC medicines available."
+    a_ur: "جی، Ground Floor پر 24 گھنٹے فارمیسی موجود ہے۔ پرچی والی اور بغیر پرچی والی دوائیں ملتی ہیں۔"
+    category: services

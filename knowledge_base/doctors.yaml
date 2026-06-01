@@ -1,0 +1,92 @@
+doctors:
+  - name: "Dr. Kamran Baig"
+    department: neurology
+    specialization: "Consultant Neurologist"
+    qualification: "MBBS, MD Neurology (CPSP)"
+    available_days: "Mon,Wed,Fri"
+    slots:
+      - { start: "09:00", end: "13:00" }
+      - { start: "17:00", end: "20:00" }
+    fee: 2000
+    languages: ["Urdu", "English"]
+    bio_ur: "15 سال کا تجربہ۔ سر درد، مرگی اور فالج کے ماہر۔"
+
+  - name: "Dr. Ayesha Malik"
+    department: gynecology
+    specialization: "Gynecologist & Obstetrician"
+    qualification: "MBBS, FCPS Gynecology"
+    available_days: "Tue,Thu,Sat"
+    slots:
+      - { start: "10:00", end: "14:00" }
+      - { start: "16:00", end: "19:00" }
+    fee: 2500
+    languages: ["Urdu", "English"]
+    bio_ur: "12 سال کا تجربہ۔ حمل اور خواتین کی صحت کی ماہر۔"
+
+  - name: "Dr. Tariq Shah"
+    department: cardiology
+    specialization: "Cardiologist"
+    qualification: "MBBS, FCPS Cardiology, Fellowship AHA"
+    available_days: "Mon,Tue,Thu"
+    slots:
+      - { start: "09:00", end: "12:00" }
+      - { start: "14:00", end: "17:00" }
+    fee: 3000
+    languages: ["Urdu", "English", "Punjabi"]
+    bio_ur: "20 سال کا تجربہ۔ دل کی بیماریوں کے ماہر سرجن۔"
+
+  - name: "Dr. Sara Ahmed"
+    department: pediatric
+    specialization: "Consultant Pediatrician"
+    qualification: "MBBS, DCH, FCPS Pediatrics"
+    available_days: "Mon,Wed,Thu,Sat"
+    slots:
+      - { start: "09:00", end: "13:00" }
+    fee: 1500
+    languages: ["Urdu", "English"]
+    bio_ur: "بچوں کی صحت کی ماہر۔ ویکسینیشن اور بچوں کی بیماریوں کا علاج۔"
+
+  - name: "Dr. Imran Khan"
+    department: orthopedic
+    specialization: "Orthopedic Surgeon"
+    qualification: "MBBS, FCPS Orthopedics"
+    available_days: "Tue,Wed,Fri"
+    slots:
+      - { start: "10:00", end: "14:00" }
+      - { start: "18:00", end: "20:00" }
+    fee: 2500
+    languages: ["Urdu", "English", "Pashto"]
+    bio_ur: "ہڈیوں اور جوڑوں کے آپریشن کے ماہر۔ 10 سال کا تجربہ۔"
+
+  - name: "Dr. Nadia Hussain"
+    department: general
+    specialization: "General Physician"
+    qualification: "MBBS, MCPS Internal Medicine"
+    available_days: "Mon,Tue,Wed,Thu,Fri,Sat"
+    slots:
+      - { start: "08:00", end: "20:00" }
+    fee: 1000
+    languages: ["Urdu", "English"]
+    bio_ur: "عام بیماریوں کا علاج۔ ہر روز دستیاب۔"
+
+  - name: "Dr. Usman Farooq"
+    department: ent
+    specialization: "ENT Specialist"
+    qualification: "MBBS, DLO, FCPS ENT"
+    available_days: "Mon,Thu,Sat"
+    slots:
+      - { start: "11:00", end: "15:00" }
+    fee: 1800
+    languages: ["Urdu", "English"]
+    bio_ur: "کان ناک گلے کے امراض کے ماہر۔"
+
+  - name: "Dr. Fatima Zahra"
+    department: dermatology
+    specialization: "Dermatologist"
+    qualification: "MBBS, DDV Dermatology"
+    available_days: "Wed,Fri,Sat"
+    slots:
+      - { start: "10:00", end: "14:00" }
+    fee: 2000
+    languages: ["Urdu", "English"]
+    bio_ur: "جلد اور بالوں کے مسائل کی ماہر۔"

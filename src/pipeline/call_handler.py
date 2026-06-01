@@ -49,7 +49,8 @@ def _sanitize_for_tts(text: str) -> str:
     return text.strip()
 
 from config.settings import settings
-from src.llm.agent import HospitalAgent
+from src.llm.agent_v2 import HospitalAgentV2
+from src.llm.data_extractor import extract_patient_data
 from src.stt.transcriber import Transcriber
 from src.tts.synthesizer import VoiceSynthesizer
 from src.vad.detector import VADDetector
@@ -94,8 +95,9 @@ class CallHandler:
         self.session_id = session_id
         self.language = language
         self.phone_mode = phone_mode          # True for Twilio calls (8 kHz upsampled audio)
-        self.agent = HospitalAgent(language=language)
+        self.agent = HospitalAgentV2(language=language)
         self.policy = DialoguePolicy(language=language)
+        self._db_session = None               # opened in start_call(), closed in end_call()
 
         # Per-call audio state
         self._speech_buffer: list = []
@@ -138,6 +140,11 @@ class CallHandler:
         """
         import hashlib
         import os
+
+        # Open a per-call DB session and inject into agent
+        from src.db.database import AsyncSessionLocal
+        self._db_session = AsyncSessionLocal()
+        self.agent.set_db(self._db_session)
 
         self.agent.reset()
         self.policy.reset()
@@ -209,6 +216,10 @@ class CallHandler:
             self._turn_task.cancel()
         await self._response_queue.put(None)
         self._save_call_log()
+        # Close the per-call DB session
+        if self._db_session:
+            await self._db_session.close()
+            self._db_session = None
         self._speech_buffer = []
         self._processing = False
         self._vad.reset()
@@ -229,8 +240,8 @@ class CallHandler:
                 "language": self.language,
                 "timestamp": datetime.now().isoformat(),
                 "transcript": self.agent.get_transcript(),
-                "collected": self.agent._collected,
-                "flow_state": self.agent._flow_state,
+                "policy_state": self.policy.state,
+                "policy_collected": self.policy.collected_data,
             }
             with open(log_path, "w", encoding="utf-8") as f:
                 json.dump(log_data, f, ensure_ascii=False, indent=2)
@@ -296,6 +307,39 @@ class CallHandler:
             if silence >= self._silence_gate:
                  self._turn_task = asyncio.create_task(self._process_turn())
 
+    # ── Conversation logging ──────────────────────────────────────────────────
+
+    async def _log_turn(
+        self,
+        transcript: str,
+        confidence: dict,
+        intent: str,
+        policy_state: str,
+        response: str,
+        used_fallback: bool = False,
+        latency_ms: int = None,
+    ):
+        """Persist one conversation turn to the database for later analysis."""
+        try:
+            from src.db.models import ConversationLog
+            log = ConversationLog(
+                session_id=self.session_id,
+                language=self.language,
+                turn_number=getattr(self.agent, "_turn_count", 0),
+                user_transcript=transcript,
+                asr_confidence=confidence.get("avg_logprob"),
+                detected_intent=intent,
+                policy_state=policy_state,
+                agent_response=response,
+                model_used=settings.ollama_model if not used_fallback else settings.claude_fallback_model,
+                used_fallback=used_fallback,
+                latency_ms=latency_ms,
+            )
+            self._db_session.add(log)
+            await self._db_session.commit()
+        except Exception as e:
+            logger.warning(f"[{self.session_id}] Conv log failed: {e}")
+
     # ── Micro-acknowledgment ──────────────────────────────────────────────────
 
     async def _get_ack_audio(self) -> bytes:
@@ -332,6 +376,7 @@ class CallHandler:
             return
 
         self._processing = True
+        turn_start = time.time()
         audio_array = np.array(self._speech_buffer, dtype=np.float32)
         self._speech_buffer = []
         self._last_speech_ts = None
@@ -396,17 +441,30 @@ class CallHandler:
             # Tell browser we're thinking
             await self._response_queue.put(("json", {"type": "processing"}))
 
+            # ── Pre-LLM transcript log (for debugging STT vs LLM errors) ─────
+            logger.info(
+                f"[{self.session_id}] PRE-LLM | lang={self.agent.language} "
+                f"conf={confidence.get('avg_logprob', 0):.2f} | '{transcript}'"
+            )
+
             # ── Dialogue Policy & Semantic Validation ─────────────────────────
-            # 1. Detect Intent
+            # 1. Extract patient data from transcript to keep policy state in sync.
+            #    Without this, _collected is always empty and policy loops on ASK_NAME.
+            extracted = extract_patient_data(transcript, self.agent.language)
+            if extracted:
+                self.agent._collected.update(extracted)
+                logger.debug(f"[{self.session_id}] Extractor → {extracted}")
+
+            # 2. Detect Intent
             current_intent = detect_intent(transcript, self.policy.state, self.agent.language)
-            
-            # 2. Semantic Validation
+
+            # 3. Semantic Validation
             is_valid_sem, sem_reason = is_semantically_valid(transcript, self.policy.state, self.agent.language)
             if not is_valid_sem:
                 current_intent = "GARBAGE"
                 logger.warning(f"[{self.session_id}] Semantic validation failed: {sem_reason}")
-                
-            # 3. Policy Evaluation
+
+            # 4. Policy Evaluation — pass extracted data so state advances correctly
             policy_result = self.policy.evaluate(current_intent, self.agent._collected)
             
             if policy_result["is_hard_fallback"]:
@@ -451,8 +509,21 @@ class CallHandler:
                         self._is_active = False
 
             # Send full agent speech to transcript
-            if agent_speech_parts:
-                await self._response_queue.put(("json", {"type": "agent_speech", "text": " ".join(agent_speech_parts)}))
+            full_speech = " ".join(agent_speech_parts)
+            if full_speech:
+                await self._response_queue.put(("json", {"type": "agent_speech", "text": full_speech}))
+
+            # ── Persist conversation turn to DB ──────────────────────────────
+            if self._db_session and full_speech:
+                await self._log_turn(
+                    transcript=transcript,
+                    confidence=confidence,
+                    intent=current_intent,
+                    policy_state=policy_result.get("current_state", ""),
+                    response=full_speech,
+                    used_fallback=result.get("used_fallback", False) if isinstance(result, dict) else False,
+                    latency_ms=int((time.time() - turn_start) * 1000) if 'turn_start' in dir() else None,
+                )
 
         except Exception as e:
             logger.exception(f"[{self.session_id}] Turn error: {e}")

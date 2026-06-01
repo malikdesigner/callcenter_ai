@@ -25,23 +25,25 @@ def is_valid_input(text: str, confidence: dict, language: str = "ur") -> tuple[b
         return False, "too_short"
         
     # 2. Confidence thresholds
-    # Typically Whisper logprob < -0.6 or -0.8 means it's guessing.
-    # no_speech_prob > 0.4 usually means background noise
-    # Since prompt requires dropping inputs with confidence < 0.6, we will treat logprob 
-    # heuristically or expect a scaled confidence. Let's assume logprob > -0.6 or no_speech_prob < 0.4
-    # The requirement strictly says "Drops inputs with confidence < 0.6". Whisper's confidence isn't exactly 0-1,
-    # but we can convert logprob roughly. Or we use the strict threshold.
-    
-    # Using previous CallHandler logic as baseline: 
-    # _GARBAGE_LOGPROB = -0.85, _GARBAGE_NO_SPEECH = 0.45
-    # Let's enforce the new, stricter logprob or probability constraint.
+    # Whisper logprob is the natural log of token probability: prob = exp(logprob).
+    # Phone numbers naturally score lower because digit sequences have less linguistic
+    # context — we must not reject them with the same threshold as speech.
     import math
-    # Whisper logprob is natural log of probability. prob = exp(logprob).
     prob = math.exp(avg_logprob)
-    if prob < 0.6:
-        logger.warning(f"[STT Filter] Rejected '{text}' - Low confidence ({prob:.2f} < 0.6)")
+
+    digit_count = sum(1 for c in text if c.isdigit())
+    is_phone_context = digit_count >= 7  # likely a phone/ID number
+
+    # Lenient threshold for phone numbers (0.35), strict for everything else (0.60)
+    confidence_threshold = 0.35 if is_phone_context else 0.60
+    if prob < confidence_threshold:
+        logger.warning(
+            f"[STT Filter] Rejected '{text}' - "
+            f"Low confidence ({prob:.2f} < {confidence_threshold}) "
+            f"[phone_context={is_phone_context}]"
+        )
         return False, "low_confidence"
-        
+
     if no_speech_prob > 0.4:
         logger.warning(f"[STT Filter] Rejected '{text}' - High no_speech probability ({no_speech_prob:.2f} > 0.4)")
         return False, "no_speech"

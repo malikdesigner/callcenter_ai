@@ -1,0 +1,72 @@
+departments:
+  - name: general
+    display: "General Medicine / OPD"
+    display_ur: "جنرل میڈیسن"
+    description: "Fever, cough, cold, flu, diabetes, blood pressure, weakness, allergies, skin issues"
+    keywords_ur: ["بخار", "کھانسی", "زکام", "شوگر", "بی پی", "کمزوری", "الرجی", "جلد"]
+    keywords_en: ["fever", "cough", "cold", "flu", "sugar", "diabetes", "bp", "pressure", "weakness"]
+    floor: "Ground Floor, Block A"
+
+  - name: cardiology
+    display: "Cardiology (Heart)"
+    display_ur: "امراض قلب"
+    description: "Heart problems, chest pain, palpitations, shortness of breath"
+    keywords_ur: ["دل", "سینہ", "سینے میں درد", "دھڑکن", "سانس"]
+    keywords_en: ["heart", "chest", "cardiac", "palpitation", "breathless"]
+    floor: "1st Floor, Block B"
+
+  - name: orthopedic
+    display: "Orthopedics (Bones & Joints)"
+    display_ur: "ہڈی اور جوڑ"
+    description: "Bone fractures, joint pain, back pain, knee pain, sports injuries"
+    keywords_ur: ["ہڈی", "جوڑ", "گھٹنا", "کمر درد", "فریکچر", "موچ"]
+    keywords_en: ["bone", "joint", "fracture", "knee", "back", "sprain", "orthopedic"]
+    floor: "2nd Floor, Block C"
+
+  - name: pediatric
+    display: "Pediatrics (Children)"
+    display_ur: "بچوں کے امراض"
+    description: "Children health, newborns, vaccinations, growth issues"
+    keywords_ur: ["بچہ", "بچے", "بچی", "شیرخوار", "ویکسین"]
+    keywords_en: ["child", "children", "baby", "infant", "pediatric", "vaccination"]
+    floor: "1st Floor, Block A"
+
+  - name: gynecology
+    display: "Gynecology & Obstetrics"
+    display_ur: "امراض نسواں"
+    description: "Women's health, pregnancy, maternity, menstrual issues"
+    keywords_ur: ["حمل", "ماہواری", "خواتین", "پریگنینسی", "ڈیلیوری"]
+    keywords_en: ["pregnancy", "gynae", "women", "maternity", "delivery", "period"]
+    floor: "2nd Floor, Block A"
+
+  - name: neurology
+    display: "Neurology (Brain & Nerves)"
+    display_ur: "اعصابی امراض"
+    description: "Headaches, migraines, seizures, stroke, memory loss, dizziness"
+    keywords_ur: ["سر درد", "مائگرین", "مرگی", "فالج", "چکر", "یادداشت"]
+    keywords_en: ["headache", "migraine", "seizure", "epilepsy", "stroke", "brain", "nerves"]
+    floor: "3rd Floor, Block B"
+
+  - name: ent
+    display: "ENT (Ear, Nose, Throat)"
+    display_ur: "کان ناک گلا"
+    description: "Ear infections, hearing loss, nasal issues, throat problems, tonsils"
+    keywords_ur: ["کان", "ناک", "گلا", "ٹانسل", "سماعت"]
+    keywords_en: ["ear", "nose", "throat", "tonsil", "hearing", "ent"]
+    floor: "Ground Floor, Block B"
+
+  - name: ophthalmology
+    display: "Ophthalmology (Eyes)"
+    display_ur: "آنکھوں کے امراض"
+    description: "Eye problems, vision, glasses, cataract, eye infections"
+    keywords_ur: ["آنکھ", "نظر", "موتیا", "چشمہ"]
+    keywords_en: ["eye", "vision", "glasses", "cataract", "ophthalmology"]
+    floor: "Ground Floor, Block C"
+
+  - name: dermatology
+    display: "Dermatology (Skin)"
+    display_ur: "جلدی امراض"
+    description: "Skin diseases, acne, eczema, psoriasis, hair loss"
+    keywords_ur: ["جلد", "کیل مہاسے", "خارش", "بالوں کا گرنا"]
+    keywords_en: ["skin", "acne", "eczema", "rash", "hair loss", "dermatology"]
+    floor: "1st Floor, Block C"

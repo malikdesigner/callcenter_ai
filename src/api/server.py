@@ -40,8 +40,17 @@ def create_app(language: str = None) -> FastAPI:
 
     @new_app.on_event("startup")
     async def startup():
+        # Legacy SQLite tables (dashboard, old appointment data)
         create_tables()
+
+        # New async DB — PostgreSQL or SQLite via SQLAlchemy async
+        from src.db.database import init_db, AsyncSessionLocal
+        from src.db.seed import seed as seed_kb
+        await init_db()
+        async with AsyncSessionLocal() as session:
+            await seed_kb(session)
         logger.info("Database ready.")
+
         CallHandler.load_models()
 
     # ── Static pages ───────────────────────────────────────────────────────────

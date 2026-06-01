@@ -12,6 +12,11 @@ Usage:
 import asyncio
 import os
 import sys
+import warnings
+
+# Suppress noisy but harmless PyTorch/Kokoro deprecation warnings at startup
+warnings.filterwarnings("ignore", message=".*dropout.*num_layers.*",  category=UserWarning)
+warnings.filterwarnings("ignore", message=".*weight_norm.*deprecated.*", category=FutureWarning)
 
 # CRITICAL FIX for Windows cuDNN Error 127:
 # We MUST import torch before ANY other ML library (like faster_whisper/ctranslate2)
