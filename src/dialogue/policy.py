@@ -120,6 +120,23 @@ class DialoguePolicy:
         
         return "CONFIRMATION"
 
+    def sync_from_collected(self, collected: dict) -> None:
+        """
+        Re-sync policy state from the agent's latest collected data.
+        Call at the start of every turn so the fast_engine's advances
+        (phone extraction, name extraction, etc.) are visible to the
+        semantic validator and intent detector before they run.
+        """
+        for k, v in collected.items():
+            if v:
+                self.collected_data[k] = v
+        new_state = self._determine_next_state()
+        if new_state != self.state:
+            # State advanced — clear accumulated retry counter so the next
+            # valid answer isn't penalised for previous retries in the old state
+            self.retry_count = 0
+        self.state = new_state
+
     def reset(self):
         self.state = "GREETING"
         self.retry_count = 0

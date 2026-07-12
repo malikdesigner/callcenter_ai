@@ -6,7 +6,7 @@ This layer is what separates "LLM text → TTS" (robotic) from
 "conversational speech generation" (human-like).
 
 Pipeline position:
-  LLM output → SpeechFormatter → TTS prep → Edge-TTS/ElevenLabs
+  LLM output → SpeechFormatter → TTS prep → Edge-TTS (Microsoft Neural Voices)
 
 What it does:
   1. Detects sentence tone (micro | question | confirm | apology | neutral)
@@ -26,10 +26,23 @@ from typing import Tuple
 # ── Formal → Spoken Urdu conversion map ──────────────────────────────────────
 # Order matters: longer/more-specific phrases must precede shorter sub-phrases.
 _UR_FORMAL_TO_SPOKEN = [
-    ("جناب والا",          "سر"),
-    ("معذرت خواہ ہوں",   "سوری"),
-    ("معافی چاہتا ہوں",  "سوری"),
-    ("اپوائنٹمنٹ",       "وقت"),
+    # Multi-word phrases first
+    ("جناب والا",           "سر"),
+    ("معذرت خواہ ہوں",     "سوری"),
+    ("معافی چاہتا ہوں",    "سوری"),
+    ("معافی چاہتی ہوں",    "سوری"),
+    ("تشریف لائیں",        "آئیں"),
+    ("تشریف لے جائیں",    "جائیں"),
+    ("براہ مہربانی",        ""),
+    ("براہ کرم",            ""),
+    # Single formal words
+    ("جناب",               "سر"),
+    ("محترم",              ""),
+    ("معافی",              "سوری"),
+    ("لہذا",               ""),
+    ("چنانچہ",             ""),
+    ("بہرحال",             ""),
+    ("اپوائنٹمنٹ",         "وقت"),
 ]
 
 # ── Formal → Spoken Roman Urdu conversion map ─────────────────────────────────
@@ -67,20 +80,22 @@ _QUESTION_RO = ["kya", "kaun", "kab", "kahan", "kaise", "konsa", "kitna", "konse
 # English base: rate=-5%, pitch=+0Hz (JennyNeural default).
 TONE_PROSODY = {
     "ur": {
-        "micro":    {"rate": "+12%", "pitch": "+0Hz"},   # fast filler — جی ... اچھا
-        "question": {"rate": "+2%",  "pitch": "+1Hz"},   # slower, slight rise
-        "confirm":  {"rate": "+8%",  "pitch": "-1Hz"},   # assertive, warm
-        "apology":  {"rate": "-2%",  "pitch": "-4Hz"},   # slower, softer
-        "empathetic": {"rate": "-4%", "pitch": "-3Hz"},  # soft, comforting tone for symptoms/confusion
-        "neutral":  {"rate": "+5%",  "pitch": "-2Hz"},   # default
+        # Natural Pakistani Urdu speech is measured and deliberate — not rushed.
+        # UzmaNeural sounds most human at slightly slower rates with a warmer pitch.
+        "micro":    {"rate": "+5%",  "pitch": "+0Hz"},   # fillers: جی، اچھا — slightly faster
+        "question": {"rate": "-5%",  "pitch": "+2Hz"},   # questions: slower, rise at end
+        "confirm":  {"rate": "-2%",  "pitch": "-4Hz"},   # confirmation: clear and warm
+        "apology":  {"rate": "-10%", "pitch": "-5Hz"},   # apology: slow, soft
+        "empathetic": {"rate": "-8%", "pitch": "-5Hz"},  # empathetic: soft comfort tone
+        "neutral":  {"rate": "-3%",  "pitch": "-5Hz"},   # default: natural pace, warm
     },
     "ro": {
-        "micro":    {"rate": "+12%", "pitch": "+0Hz"},
-        "question": {"rate": "+2%",  "pitch": "+1Hz"},
-        "confirm":  {"rate": "+8%",  "pitch": "-1Hz"},
-        "apology":  {"rate": "-2%",  "pitch": "-4Hz"},
-        "empathetic": {"rate": "-4%", "pitch": "-3Hz"},
-        "neutral":  {"rate": "+5%",  "pitch": "-2Hz"},
+        "micro":    {"rate": "+5%",  "pitch": "+0Hz"},
+        "question": {"rate": "-5%",  "pitch": "+2Hz"},
+        "confirm":  {"rate": "-2%",  "pitch": "-4Hz"},
+        "apology":  {"rate": "-10%", "pitch": "-5Hz"},
+        "empathetic": {"rate": "-8%", "pitch": "-5Hz"},
+        "neutral":  {"rate": "-3%",  "pitch": "-5Hz"},
     },
     "en": {
         "micro":    {"rate": "+2%",  "pitch": "+0Hz"},

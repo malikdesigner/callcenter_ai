@@ -104,6 +104,10 @@ class CallHandler:
         self._processing = False
         self._response_queue = asyncio.Queue()
         self._turn_task = None
+        # Barge-in suppression: estimated time Sara's audio finishes playing.
+        # Edge-TTS MP3 at ~128 kbps ≈ 16 KB/s → duration = bytes/16000.
+        # Prevents mic echo from canceling Sara's own TTS mid-stream.
+        self._playback_end_estimate: float = 0.0
 
         # Rolling pre-speech buffer: captures ~300ms before VAD fires
         # so the first syllable of a word is never clipped
@@ -111,8 +115,7 @@ class CallHandler:
         self._pre_buffer: deque = deque(maxlen=_pre_buf_frames)
 
         # Silence gate: how long of silence triggers processing
-        # 2.5s for Urdu/Roman to allow thinking pauses, 1.8s for English
-        self._silence_gate = 2.5 if language in ("ur", "ro") else 1.8
+        self._silence_gate = 2.0 if language in ("ur", "ro") else 1.5
 
     @property
     def is_active(self) -> bool:
@@ -163,7 +166,9 @@ class CallHandler:
         if os.path.exists(cache_path) and not self.agent._bilingual_mode:
             logger.info(f"[{self.session_id}] Using cached greeting audio")
             with open(cache_path, "rb") as f:
-                await self._response_queue.put(("audio", f.read()))
+                data = f.read()
+            self._extend_playback_guard(data)
+            await self._response_queue.put(("audio", data))
             return
 
         greeting = _sanitize_for_tts(greeting)
@@ -174,6 +179,7 @@ class CallHandler:
             audio = await self._tts.synthesize(greeting)
             if audio:
                 full_audio = audio
+                self._extend_playback_guard(audio)
                 await self._response_queue.put(("audio", audio))
         else:
             # English/bilingual: sentence-by-sentence for faster first-audio delivery
@@ -189,6 +195,7 @@ class CallHandler:
                 audio = await self._tts.synthesize(sentence)
                 if audio:
                     full_audio += audio
+                    self._extend_playback_guard(audio)
                     await self._response_queue.put(("audio", audio))
             # Restore correct TTS language after greeting
             self._tts.set_language(self.agent.language if self.agent.language != "bi" else "en")
@@ -260,6 +267,10 @@ class CallHandler:
         is_speech = self._vad.is_speech(audio)
 
         if is_speech:
+            # Suppress barge-in while Sara's audio is estimated to still be playing.
+            # Echo of Sara's voice would otherwise cancel her own TTS mid-stream.
+            if time.time() < self._playback_end_estimate:
+                return
             if self._turn_task and not self._turn_task.done():
                 logger.info(f"[{self.session_id}] Interruption detected! Canceling turn.")
                 self._turn_task.cancel()
@@ -318,6 +329,15 @@ class CallHandler:
         
         cache = self.__class__._ack_cache.get(lang, [])
         return random.choice(cache) if cache else b""
+
+    def _extend_playback_guard(self, audio_bytes: bytes, margin: float = 0.6) -> None:
+        """
+        Extend the barge-in suppression window by the estimated playback duration
+        of audio_bytes. Edge-TTS MP3 at ~128 kbps ≈ 16 000 bytes/s.
+        margin adds extra seconds so network/browser buffering can't eat into it.
+        """
+        duration = len(audio_bytes) / 16000 + margin
+        self._playback_end_estimate = max(self._playback_end_estimate, time.time() + duration)
 
     # ── Turn processing ───────────────────────────────────────────────────────
 
@@ -388,8 +408,16 @@ class CallHandler:
                 self._tts.set_language(lang)
                 repeat_audio = await self._tts.synthesize(repeat_text)
                 if repeat_audio:
+                    self._extend_playback_guard(repeat_audio)
                     await self._response_queue.put(("audio", repeat_audio))
                 return
+
+            # Sync policy state with agent's latest collected data.
+            # The fast_engine can collect fields (phone, name, etc.) and advance
+            # the agent's _flow_state without going through the policy, so
+            # self.policy.state can lag. Re-sync so the semantic validator and
+            # intent detector see the correct current state.
+            self.policy.sync_from_collected(self.agent._collected)
 
             # Tell browser what the user said
             await self._response_queue.put(("json", {"type": "transcript", "text": transcript}))
@@ -413,18 +441,20 @@ class CallHandler:
                 self._tts.set_language(self.agent.language)
                 fallback_audio = await self._tts.synthesize(policy_result["fallback_text"], policy_tone="empathetic")
                 if fallback_audio:
+                    self._extend_playback_guard(fallback_audio)
                     await self._response_queue.put(("audio", fallback_audio))
                 return
 
             # 0. Micro-acknowledgment — instant filler word
             ack = await self._get_ack_audio()
             if ack:
+                self._extend_playback_guard(ack)
                 await self._response_queue.put(("audio", ack))
 
             # 2. LLM response → TTS (Streaming chunk-by-chunk for ultra-low latency)
             agent_speech_parts = []
             policy_tone = "empathetic" if "CONFUSED" in str(current_intent) or policy_result["current_state"] == "ASK_SYMPTOM" else None
-            
+
             async for item in self.agent.process_turn_stream(transcript, audio_language=audio_language, policy_state=policy_result["current_state"], nlg_constraint=policy_result["nlg_constraint"]):
                 if isinstance(item, str):
                     sentence = _sanitize_for_tts(item.strip())
@@ -432,11 +462,12 @@ class CallHandler:
                         continue
                     logger.debug(f"[{self.session_id}] TTS sentence: {sentence}")
                     agent_speech_parts.append(sentence)
-                    
+
                     # Stream immediately regardless of language
                     self._tts.set_language(self.agent.language)
                     audio_bytes = await self._tts.synthesize(sentence, policy_tone=policy_tone)
                     if audio_bytes:
+                        self._extend_playback_guard(audio_bytes)
                         await self._response_queue.put(("audio", audio_bytes))
                 else:
                     # Final result dict — handle action
@@ -464,6 +495,7 @@ class CallHandler:
                 fallback_text = "I'm sorry, I'm having a technical issue. Could you please repeat?"
             fallback = await self._tts.synthesize(fallback_text)
             if fallback:
+                self._extend_playback_guard(fallback)
                 await self._response_queue.put(("audio", fallback))
         finally:
             self._processing = False

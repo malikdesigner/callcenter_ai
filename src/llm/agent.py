@@ -19,11 +19,83 @@ from src.appointment.booking import (
 from src.appointment.models import Appointment, Doctor, Department, engine
 from src.llm.intent import detect_intent, detect_language_switch, detect_language_preference, detect_symptom_department, validate_slot_input
 
+# ── Session-level Gemini key exhaustion tracking ──────────────────────────────
+# Keys are added here when their daily quota is confirmed exhausted (limit: 0).
+# Avoids re-trying dead keys on every call within the same server session.
+_gemini_exhausted_keys: set = set()
+
 # ── Role & Strict Flow ────────────────────────────────────────────────────────
 
 PLACEHOLDERS = {"unknown", "patient name", "phone number", "n/a", "none", "tbd", "placeholder"}
 # reason is optional — patient may not give one explicitly
 REQUIRED_FIELDS = ["patient_name", "patient_phone", "department", "doctor_name", "appointment_date", "appointment_time"]
+
+# ── Hospital knowledge base (editable by admin) ────────────────────────────────
+
+import os as _os
+
+_KNOWLEDGE_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))), "data", "hospital_knowledge.json")
+_hospital_knowledge: dict = {}
+
+def _load_hospital_knowledge() -> dict:
+    """Load admin-editable hospital knowledge from data/hospital_knowledge.json."""
+    global _hospital_knowledge
+    try:
+        with open(_KNOWLEDGE_PATH, "r", encoding="utf-8") as f:
+            _hospital_knowledge = json.load(f)
+        logger.info(f"[Knowledge] Loaded hospital knowledge ({len(_hospital_knowledge)} sections)")
+    except FileNotFoundError:
+        logger.warning(f"[Knowledge] hospital_knowledge.json not found — non-booking queries will use generic responses")
+        _hospital_knowledge = {}
+    except Exception as e:
+        logger.error(f"[Knowledge] Failed to load hospital_knowledge.json: {e}")
+        _hospital_knowledge = {}
+    return _hospital_knowledge
+
+def _build_knowledge_block(lang: str = "ur") -> str:
+    """Convert hospital knowledge to a compact prompt block for Ollama."""
+    kb = _hospital_knowledge or _load_hospital_knowledge()
+    if not kb:
+        return ""
+
+    lines = ["━━━ HOSPITAL KNOWLEDGE (answer info queries from this) ━━━"]
+
+    hosp = kb.get("hospital", {})
+    if hosp:
+        lines.append(f"Hospital: {hosp.get('name','')} | {hosp.get('address','')} | Tel: {hosp.get('phone','')} | Emergency: {hosp.get('emergency','')}")
+
+    timings = kb.get("timings", {})
+    if timings:
+        t_parts = [f"{k}: {v}" for k, v in timings.items()]
+        lines.append("Timings: " + " | ".join(t_parts))
+
+    fees = kb.get("fees", {})
+    if fees:
+        f_parts = [f"{k}: {v}" for k, v in fees.items()]
+        lines.append("Fees: " + " | ".join(f_parts))
+
+    policies = kb.get("policies", {})
+    if policies:
+        p_parts = [f"{k}: {v}" for k, v in policies.items()]
+        lines.append("Policies: " + " | ".join(p_parts))
+
+    faqs = kb.get("faqs", [])
+    if faqs:
+        faq_parts = [f"Q: {f['q']} → A: {f['a']}" for f in faqs]
+        lines.append("FAQs:\n" + "\n".join(faq_parts))
+
+    out_of_scope = kb.get("out_of_scope_response", {})
+    if out_of_scope:
+        oos = out_of_scope.get(lang, out_of_scope.get("en", ""))
+        if oos:
+            lines.append(f"OUT_OF_SCOPE RESPONSE (if asked something unrelated to hospital): \"{oos}\"")
+
+    lines.append(
+        "INFO QUERY RULE: If user asks anything from the knowledge above → answer it naturally and warmly, "
+        "then return to booking flow if appointment was in progress. "
+        "If completely out of scope (car, politics, etc.) → use OUT_OF_SCOPE RESPONSE."
+    )
+    return "\n".join(lines)
 
 # ── System prompt ──────────────────────────────────────────────────────────────
 
@@ -75,9 +147,16 @@ QUESTIONING → answer briefly then continue:
 CORRECTING → accept + re-collect:
   نمبر غلط ہوگیا       → کوئی بات نہیں ... دوبارہ بتا دیجیے
 
-━━━ BOOKING RULES ━━━
-• Symptoms → empathy + recommend SPECIFIC DOCTOR by name. NEVER "کونسے شعبے میں جانا ہے"
-  ✓ اچھا جی ... ڈاکڑ [نام] ہیں اس کے لیے ... وقت لوں
+━━━ BOOKING FLOW — STRICT ORDER ━━━
+1. نام ملا → فون نمبر مانگیں
+2. فون ملا → تکلیف پوچھیں: "آپکو کیا تکلیف ہے؟"
+   NEVER offer a menu like "معلومات چاہیے یا اپوائنٹمنٹ" — just ask for symptoms directly.
+3. تکلیف بتائی → empathy + SPECIFIC DOCTOR recommend کریں by name
+   ✓ "اچھا جی ... اس کے لیے ڈاکڑ [نام] ہیں ... کیا ان سے وقت لوں؟"
+   ✗ NEVER "کونسے شعبے میں جانا ہے"
+4. Doctor confirm → تاریخ پوچھیں
+5. تاریخ ملی → دستیاب slot دکھائیں (صرف 3 slots)
+6. Slot confirm → booking confirm کریں → action="save"
 • One thing per turn. Acknowledge before asking.
 • NEVER repeat exact same question twice — rephrase.
 • action="end" ONLY after booking done + patient says goodbye.
@@ -85,14 +164,15 @@ CORRECTING → accept + re-collect:
 ━━━ OUTPUT RULES ━━━
 1. Urdu script only (ا ب پ...). Zero English or Roman Urdu.
 2. NATURAL CONVERSATIONAL TONE: Talk like a real, polite Pakistani receptionist. Use complete, warm sentences.
-   ✓ السلام علیکم، میں سارہ بات کر رہی ہوں۔ بتائیے میں آپ کی کیا مدد کر سکتی ہوں؟
-   ✓ جی بالکل، کوئی مسئلہ نہیں۔ آپ کا فون نمبر کیا ہے؟
+   ✓ السلام علیکم، میں سارہ بات کر رہی ہوں، بتائیے میں آپ کی کیا مدد کر سکتی ہوں؟
+   ✓ جی بالکل، کوئی مسئلہ نہیں، آپ کا فون نمبر کیا ہے؟
    ✗ جناب میں آپ کی کیا مدد کرسکتی ہوں (too formal)
    ✗ جی سر ... کیا مسئلہ ہے (too abrupt/robotic)
-3. Punctuation: Use proper punctuation (۔ ؟ ،) so the TTS engine can pace the speech naturally.
-4. Empathy: Show empathy when hearing symptoms. "اچھا، مجھے سن کر افسوس ہوا۔ کوئی فکر کی بات نہیں..."
-5. Tone words: جی بالکل، ضرور، فکر نہ کریں، مہربانی، شکریہ۔
-6. BANNED words (Too formal/bookish): براہ کرم / معافی / جناب / محترم / لہذا / اپوائنٹمنٹ۔
+3. Punctuation: Use ، (Urdu comma) for ALL pauses and between clauses. Use ؟ for questions. NEVER use ۔ — it causes a dead halt. Every mid-sentence pause must be ،
+4. Empathy: Show empathy when hearing symptoms. "اچھا، مجھے سن کر افسوس ہوا، کوئی فکر کی بات نہیں،"
+5. JSON FORMAT: Output a single compact line of JSON — no newlines, no extra spaces. {{"speech":"...","action":"...","data":{{...}}}}
+6. Tone words: جی بالکل، ضرور، فکر نہ کریں، مہربانی، شکریہ۔
+7. BANNED words (Too formal/bookish): براہ کرم / معافی / جناب / محترم / لہذا / اپوائنٹمنٹ۔
 
 VARIED FILLERS — rotate naturally:
   اچھا | جی بالکل | ٹھیک ہے | میں سمجھ سکتی ہوں | ضرور
@@ -104,14 +184,16 @@ WRONG TYPE — if user gives digits when you asked for name, or gibberish for da
 NAME RULE — patient_name must be a real name (1-4 words, no digit strings).
 SLOTS RULE — NEVER list more than 3 time slots. Pick the 3 most convenient ones.
 
-CONVERSATIONAL EXAMPLES (copy this natural style exactly):
-سلام:    السلام علیکم، میں سارہ بات کر رہی ہوں۔ بتائیے میں آپ کی کیا مدد کر سکتی ہوں؟
-فون:     جی بالکل۔ آپ کا مکمل فون نمبر کیا ہو گا؟
-تکلیف:  اچھا، فکر نہ کریں۔ ڈاکٹر [نام] ان مسائل کے ماہر ہیں۔ کیا میں ان کے ساتھ آپ کا وقت بک کر دوں؟
-تاریخ:  ضرور۔ آپ کس دن آنا پسند کریں گے؟
-وقت:    ٹھیک ہے۔ میرے پاس یہ اوقات دستیاب ہیں... [3 سلاٹس]۔ ان میں سے کون سا وقت آپ کے لیے بہتر رہے گا؟
-تصدیق:  ٹھیک ہے [نام] صاحب۔ میں نے ڈاکٹر [نام] کے ساتھ آپ کا وقت [تاریخ] کو [وقت] کے لیے بک کر دیا ہے۔ کیا میں اسے کنفرم کر دوں؟
-اختتام: بہت شکریہ آپ کا۔ اللہ حافظ۔
+CONVERSATIONAL EXAMPLES (copy this natural style — note: ، not ۔):
+سلام:    السلام علیکم، میں سارہ بات کر رہی ہوں، بتائیے میں آپ کی کیا مدد کر سکتی ہوں؟
+فون:     جی بالکل، آپ کا مکمل فون نمبر کیا ہو گا؟
+تکلیف:  اچھا، فکر نہ کریں، ڈاکٹر [نام] ان مسائل کے ماہر ہیں، کیا میں ان کے ساتھ آپ کا وقت بک کر دوں؟
+تاریخ:  ضرور، آپ کس دن آنا پسند کریں گے؟
+وقت:    ٹھیک ہے، میرے پاس یہ اوقات دستیاب ہیں: [3 سلاٹس]، ان میں سے کون سا وقت آپ کے لیے بہتر رہے گا؟
+تصدیق:  ٹھیک ہے [نام] صاحب، میں نے ڈاکٹر [نام] کے ساتھ آپ کا وقت [تاریخ] کو [وقت] کے لیے بک کر دیا ہے، کیا میں اسے کنفرم کر دوں؟
+اختتام: بہت شکریہ آپ کا، اللہ حافظ،
+
+{_build_knowledge_block("ur")}
 
 JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
 
@@ -146,9 +228,16 @@ QUESTIONING → briefly answer then continue:
 CORRECTING → accept + re-collect:
   number galat hogaya   → koi baat nahi ... dobara bata dein
 
-━━━ BOOKING RULES ━━━
-• Symptoms → empathy + recommend SPECIFIC DOCTOR by name. NEVER "konse department mein jana hai"
-  ✓ Acha ji ... Dr [naam] hain is ke liye ... waqt loon
+━━━ BOOKING FLOW — STRICT ORDER ━━━
+1. Naam mila → phone number maangein
+2. Phone mila → takleef poochein: "Aapko kya takleef hai?"
+   NEVER offer a menu like "maloomat chahiye ya appointment" — seedha symptoms poochein.
+3. Takleef batayi → empathy + SPECIFIC DOCTOR naam se recommend karein
+   ✓ "Acha ji ... is ke liye Dr [naam] hain ... kya unse waqt loon?"
+   ✗ NEVER "konse department mein jana hai"
+4. Doctor confirm → date poochein
+5. Date mili → available slots dikhayein (sirf 3 slots)
+6. Slot confirm → booking confirm karein → action="save"
 • One thing per turn. Acknowledge before asking.
 • NEVER repeat exact same question twice — rephrase.
 • action="end" ONLY after booking done + patient says goodbye.
@@ -184,6 +273,8 @@ Waqt:     Theek hai. Mere paas yeh waqt hain... [3 slots]. In mein se konsa waqt
 Confirm:  Theek hai [naam] sahab. Main ne Dr [naam] ke sath aapka waqt [date] ko [waqt] ke liye book kar diya hai. Kya main isay confirm kar doon?
 Ikhtitaam: Bahut shukriya aapka. Allah hafiz.
 
+{_build_knowledge_block("ro")}
+
 JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
 
     return f"""You are {settings.receptionist_name}, receptionist at {settings.hospital_name}. Warm, human, conversational — never robotic or form-like.
@@ -215,6 +306,8 @@ BOOKING RULES:
 3. NEVER repeat the same question twice — rephrase.
 4. action="end" ONLY after booking complete + patient says goodbye.
 
+{_build_knowledge_block("en")}
+
 action: ask=collecting info | confirm=all ready, read back | save=patient confirmed | end=after booking+goodbye
 JSON only: {{"speech":"...","action":"ask|confirm|save|end","data":{{"patient_name":"","patient_phone":"","department":"","doctor_name":"","appointment_date":"","appointment_time":"","reason":""}}}}"""
 
@@ -236,6 +329,9 @@ class HospitalAgent:
         # Robustness tracking
         self._consecutive_failures: int = 0
         self._last_asked_state: str = ""
+        # Fast dialogue engine (instant responses, no Ollama needed for structured steps)
+        from src.dialogue.fast_engine import FastDialogueEngine
+        self._fast_engine = FastDialogueEngine(language=self.language)
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -362,9 +458,11 @@ class HospitalAgent:
         # phone numbers and names that contain no Arabic characters.
         if intent == "change_language_en" and self.language != "en":
             self.language = "en"
+            self._fast_engine.language = "en"
             logger.info("[Agent] Language switched to 'en' (explicit command)")
         elif intent == "change_language_ur" and self.language != "ur":
             self.language = "ur"
+            self._fast_engine.language = "ur"
             logger.info("[Agent] Language switched to 'ur' (explicit command)")
 
         # ── Failure tracking ──────────────────────────────────────────────
@@ -379,6 +477,11 @@ class HospitalAgent:
 
         # ── Confirmation gate: if we are waiting for user's yes/no ────────
         if self._awaiting_confirmation:
+            # Fast engine checks for YES words (more reliable than intent detector)
+            fast_confirm = self._fast_engine.try_handle(user_text, "confirm_booking", self._collected)
+            if fast_confirm is not None and fast_confirm.get("action") == "save":
+                intent = "confirm"  # unify the path below
+
             if intent == "confirm":
                 # User said yes → book without calling LLM again
                 logger.info("[Agent] Confirmation received — executing booking directly")
@@ -425,6 +528,38 @@ class HospitalAgent:
                 self._collected.pop("doctor_name", None)
                 logger.debug("[Agent] Correction detected — cleared doctor_name")
 
+        # ── Fast path: instant response for structured booking steps ─────────
+        # Skip Ollama entirely for name/phone/date/time collection when the
+        # user gives a clear, structured answer. Ollama only gets called for
+        # symptoms, doctor recommendation, confusion, and corrections.
+        if not is_correction and not is_non_answer:
+            fast = self._fast_engine.try_handle(
+                user_text, self._flow_state, self._collected
+            )
+            if fast is not None:
+                logger.info(f"[Fast] Handled instantly — state={self._flow_state}, action={fast.get('action')}")
+                for k, v in fast.get("data", {}).items():
+                    if v:
+                        self._collected[k] = v
+                self._normalise_collected()
+
+                # Fast engine confirmed booking — execute it directly
+                if fast.get("action") == "save":
+                    fast = self._execute_booking(fast)
+                    self._awaiting_confirmation = False
+                    self._flow_state = "post_booking"
+                else:
+                    self._flow_state = self._compute_flow_state()
+
+                self._history.append({"role": "user", "content": user_text})
+                self._history.append({"role": "assistant", "content": fast.get("speech", "")})
+                if len(self._history) > 16:
+                    self._history = self._history[-16:]
+                if fast.get("speech"):
+                    yield fast["speech"]
+                yield fast
+                return
+
         async for content in self._chat_stream(user_text, policy_state=policy_state, nlg_constraint=nlg_constraint):
             full_json_str += content
 
@@ -448,28 +583,55 @@ class HospitalAgent:
                     speech_buffer += clean_symbols
                     last_yielded_speech_idx += len(new_symbols)
                     
-                    # Look for sentence boundaries in our buffer
-                    # Includes Urdu full stop ۔ (U+06D4) and Urdu ? ؟ (U+061F)
-                    sentences = re.split(r'(?<=[.!?۔؟])\s+', speech_buffer)
+                    # Yield on sentence/clause boundaries — ، (Urdu comma) added so
+                    # comma-delimited Urdu phrases stream to TTS without waiting for ؟
+                    sentences = re.split(r'(?<=[.!?۔؟،])\s+', speech_buffer)
                     if len(sentences) > 1:
-                        # Yield all complete sentences
                         for s in sentences[:-1]:
-                            yield s
-                        # Keep the last (potentially incomplete) one
+                            if s.strip():
+                                yield s.strip()
                         speech_buffer = sentences[-1]
 
-        # Final cleanup for the last sentence
-        if speech_buffer.strip():
-            yield speech_buffer.strip()
+        # Yield whatever remains in the buffer
+        _buffer_yielded = speech_buffer.strip()
+        if _buffer_yielded:
+            yield _buffer_yielded
 
-        # Parse final JSON to get result and update state
+        # Parse final JSON — strip markdown fences Gemini sometimes adds
         logger.debug(f"[LLM] Raw Response: {full_json_str}")
+        _json_text = full_json_str.strip()
+        if _json_text.startswith("```"):
+            _json_text = re.sub(r'^```(?:json)?\s*', '', _json_text)
+            _json_text = re.sub(r'\s*```\s*$', '', _json_text).strip()
         try:
-            result = json.loads(full_json_str)
-        except:
-            match = re.search(r'"speech"\s*:\s*"(.*?)"', full_json_str, re.DOTALL)
-            speech = match.group(1) if match else "I'm sorry, I'm having trouble thinking."
+            result = json.loads(_json_text)
+        except Exception as _json_err:
+            logger.warning(f"[LLM] JSON parse error: {_json_err} | len={len(_json_text)} | tail={_json_text[-80:]!r}")
+            # Try clean closed match first, then greedy partial extraction for truncated JSON
+            closed = re.search(r'"speech"\s*:\s*"(.*?)"(?=\s*[,}])', _json_text, re.DOTALL)
+            if closed:
+                speech = closed.group(1)
+            else:
+                partial = re.search(r'"speech"\s*:\s*"(.+)', _json_text, re.DOTALL)
+                if partial:
+                    raw = partial.group(1)
+                    end = raw.find('"')
+                    speech = raw[:end] if end != -1 else raw  # use whole tail if no closing quote
+                else:
+                    speech = ""
+            if speech:
+                logger.warning(f"[LLM] JSON parse failed — recovered speech ({len(speech)} chars)")
             result = {"speech": speech, "action": "ask", "data": {}}
+
+        # Safety net: if nothing was yielded to TTS during streaming, yield the parsed speech.
+        # Gemini without response_format sends full JSON in 1-2 large chunks,
+        # so streaming sentence extraction sees no boundary → speech_buffer stays whole.
+        _result_speech = result.get("speech", "").strip()
+        _nothing_yielded = not _buffer_yielded and last_yielded_speech_idx == 0
+        _is_error_msg = "trouble thinking" in _result_speech or "technical" in _result_speech
+        if _nothing_yielded and _result_speech and not _is_error_msg:
+            logger.debug(f"[LLM] Yielding speech from parsed JSON ({len(_result_speech)} chars)")
+            yield _result_speech
 
         # ── State Security ──
         # Filter and Merge collected data
@@ -479,9 +641,15 @@ class HospitalAgent:
                 # Ignore placeholders and empty strings
                 if val and val.lower() not in PLACEHOLDERS:
                     self._collected[k] = val
-        
+
+        # ── Doctor name auto-extraction fallback ──────────────────────────────
+        # When Ollama recommends a doctor in speech but forgets to put it in data,
+        # scan the speech for known doctor names and auto-populate collected.
+        if not self._collected.get("doctor_name"):
+            self._try_extract_doctor_from_speech(result.get("speech", ""))
+
         self._normalise_collected()
-        
+
         # Determine logical next action
         missing = self._get_missing_requirements()
         action = result.get("action", "ask")
@@ -559,6 +727,24 @@ class HospitalAgent:
         yield result
 
     # ── Normalisation ──────────────────────────────────────────────────────────
+
+    def _try_extract_doctor_from_speech(self, speech: str):
+        """
+        Scan Ollama's speech for known doctor names and auto-populate collected.
+        Called when doctor_name is missing after Ollama's turn — prevents state sticking
+        at ask_information when Ollama says the doctor name in speech but not in data JSON.
+        """
+        if not speech:
+            return
+        with Session(engine) as session:
+            doctors = session.exec(select(Doctor).where(Doctor.is_active == True)).all()
+        for doc in doctors:
+            if doc.name and doc.name in speech:
+                self._collected["doctor_name"] = doc.name
+                if doc.department_name and not self._collected.get("department"):
+                    self._collected["department"] = doc.department_name
+                logger.info(f"[Agent] Auto-extracted doctor from speech: {doc.name!r}")
+                return
 
     def _normalise_collected(self):
         """
@@ -821,8 +1007,35 @@ class HospitalAgent:
         missing = self._get_missing_requirements()
         if missing:
             lines.append(f"STILL_NEEDED: {', '.join(missing)}")
+
+            # ── ask_information: Ollama's ONE job — get symptoms + recommend doctor ──
+            if self._flow_state == "ask_information" and not self._collected.get("doctor_name"):
+                try:
+                    with Session(engine) as session:
+                        all_docs = session.exec(select(Doctor).where(Doctor.is_active == True)).all()
+                    doc_list = " | ".join(f"{d.name} ({d.specialty})" for d in all_docs)
+                except Exception:
+                    doc_list = ""
+                if self.language in ("ur", "ro"):
+                    lines.append(
+                        f"YOUR ONLY JOB THIS TURN:\n"
+                        f"1. User ne symptoms bataye → ek specific doctor ka naam choose karo\n"
+                        f"2. data.doctor_name aur data.department JSON mein zaroor likhein\n"
+                        f"Available doctors: {doc_list}\n"
+                        f"Example: agar bukhar/khansee → General Medicine doctor\n"
+                        f"Example: agar seenay mein dard → Cardiology doctor\n"
+                        f"DO NOT ask 'konsa department?' — seedha doctor suggest karo"
+                    )
+                else:
+                    lines.append(
+                        f"YOUR ONLY JOB THIS TURN:\n"
+                        f"1. Hear the symptoms → pick ONE specific doctor from the list\n"
+                        f"2. MUST include data.doctor_name AND data.department in JSON\n"
+                        f"Available doctors: {doc_list}\n"
+                        f"NEVER ask 'which department?' — recommend the doctor directly"
+                    )
+
             if non_answering:
-                # User is confused/questioning — don't force slot-filling this turn
                 lines.append(
                     "NOTE: Handle the user's intent above first. "
                     "Only ask for missing info after you have addressed their confusion/question."
@@ -1014,8 +1227,9 @@ class HospitalAgent:
     async def _chat_stream(self, user_input: str, policy_state: str = "", nlg_constraint: str = ""):
         """
         Yields raw content delta strings (str) from the LLM.
-        Priority: Gemini → Groq → Ollama (local) → HuggingFace.
-        Add GEMINI_API_KEY or GROQ_API_KEY to .env to enable cloud providers.
+        Urdu / Roman Urdu : Gemini 2.5 Flash (primary) → Ollama (fallback).
+        English            : Ollama only.
+        Set GEMINI_API_KEY in .env to enable Gemini.
         """
         system = _build_system_prompt(self.language)
         ctx = self._build_context_injection(user_input, policy_state, nlg_constraint)
@@ -1028,71 +1242,98 @@ class HospitalAgent:
 
         from openai import AsyncOpenAI
 
-        # ── Build provider list in priority order ──────────────────────────
-        # Each key in .env enables the matching provider.
-        # Priority: Gemini → HuggingFace/hf-inference → Ollama (local).
-        providers = []
+        # ── Gemini — primary for Urdu / Roman Urdu (rotates across up to 6 keys) ──
+        # English skips Gemini entirely and goes straight to Ollama.
+        global _gemini_exhausted_keys
+        if self.language in ("ur", "ro"):
+            all_keys = [k for k in [
+                settings.gemini_api_key,
+                settings.gemini_api_key1,
+                settings.gemini_api_key2,
+                settings.gemini_api_key3,
+                settings.gemini_api_key4,
+                settings.gemini_api_key5,
+            ] if k]
+            live_keys = [k for k in all_keys if k not in _gemini_exhausted_keys]
 
-        # HuggingFace free inference is disabled — their endpoint format and model
-        # availability changes too frequently to be reliable. Use Ollama instead.
-
-        # ── Try cloud providers first ──────────────────────────────────────
-        for client, model_name, provider_name, use_json_format in providers:
-            logger.info(f"[LLM] Trying {provider_name} → {model_name}")
-            try:
-                stream = await client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    response_format={"type": "json_object"} if use_json_format else None,
-                    temperature=0.2,
-                    max_tokens=350,
-                    stream=True,
+            for api_key in live_keys:
+                tag = f"...{api_key[-6:]}"
+                gemini_client = AsyncOpenAI(
+                    api_key=api_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 )
-                async for chunk in stream:
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        yield delta
-                return  # success
-            except Exception as e:
-                err_str = str(e)
-                # Skip provider permanently this session if quota is exhausted (limit: 0)
-                if "limit: 0" in err_str or "tokens per day" in err_str.lower():
-                    logger.warning(f"[LLM] {provider_name} quota exhausted — skipping for session.")
-                else:
-                    logger.error(f"[LLM] {provider_name} failed: {e}. Trying next.")
+                logger.info(f"[LLM] Trying Gemini ({settings.gemini_model}) [key {tag}]")
+                try:
+                    for attempt in range(2):  # retry once on empty response
+                        stream = await gemini_client.chat.completions.create(
+                            model=settings.gemini_model,
+                            messages=messages,
+                            temperature=0.2 if attempt == 0 else 0.4,
+                            max_tokens=1200,
+                            stream=True,
+                        )
+                        chars_received = 0
+                        async for chunk in stream:
+                            delta = chunk.choices[0].delta.content
+                            if delta:
+                                yield delta
+                                chars_received += len(delta)
+                        if chars_received > 0:
+                            break
+                        logger.warning(f"[LLM] Gemini key {tag} empty response (attempt {attempt+1}/2) — retrying.")
+                    if chars_received == 0:
+                        logger.warning(f"[LLM] Gemini key {tag} empty after 2 attempts — trying next key.")
+                        continue
+                    logger.info(f"[LLM] ✓ Answered by Gemini ({settings.gemini_model}) [key {tag}]")
+                    return
+                except Exception as e:
+                    err_str = str(e)
+                    _daily_exhausted = (
+                        "limit: 0" in err_str
+                        or "RESOURCE_EXHAUSTED" in err_str
+                        or "exceeded your current quota" in err_str
+                        or "GenerateRequestsPerDay" in err_str
+                    )
+                    if _daily_exhausted:
+                        _gemini_exhausted_keys.add(api_key)
+                        remaining = len([k for k in all_keys if k not in _gemini_exhausted_keys])
+                        logger.warning(f"[LLM] Gemini key {tag} daily quota exhausted ({remaining} key(s) left) — reason: {e}")
+                    elif "429" in err_str or "quota" in err_str.lower() or "rate" in err_str.lower():
+                        logger.warning(f"[LLM] Gemini key {tag} rate-limited — reason: {e}")
+                    else:
+                        logger.error(f"[LLM] Gemini key {tag} failed — reason: {e}")
 
-        # ── 4. Ollama (local) — auto-detect installed models ──────────────
+            if all_keys:
+                logger.warning("[LLM] All Gemini keys failed — falling back to Ollama.")
+
+        # ── Ollama (local) — primary for English, fallback for Urdu/RO ────────
         from ollama import AsyncClient
         ollama_options = {"temperature": 0.2, "num_predict": 350, "num_ctx": 2048}
         if settings.ollama_num_gpu >= 0:
             ollama_options["num_gpu"] = settings.ollama_num_gpu
 
-        client = AsyncClient(host=settings.ollama_host)
+        ollama_client = AsyncClient(host=settings.ollama_host)
 
-        # Query which models are actually installed to avoid wasting time on missing ones
         try:
-            installed_info = await client.list()
+            installed_info = await ollama_client.list()
             installed_names = [m["model"] for m in installed_info.get("models", [])]
-            logger.info(f"[LLM] Installed Ollama models: {installed_names}")
+            logger.debug(f"[LLM] Installed Ollama models: {installed_names}")
         except Exception:
-            installed_names = []  # Ollama not running — will fail at chat stage
+            installed_names = []
 
-        # Build candidate list: configured model first, then any installed model as fallback
         candidates = []
         if not installed_names or settings.ollama_model in installed_names:
             candidates.append(settings.ollama_model)
-        # Add any other installed model as emergency fallback
         for name in installed_names:
             if name not in candidates:
                 candidates.append(name)
-
         if not candidates:
-            candidates = [settings.ollama_model]  # last-resort attempt
+            candidates = [settings.ollama_model]
 
         for ollama_model in candidates:
             logger.info(f"[LLM] Trying Ollama → {ollama_model}")
             try:
-                async for chunk in await client.chat(
+                async for chunk in await ollama_client.chat(
                     model=ollama_model,
                     messages=messages,
                     format="json",
@@ -1102,16 +1343,16 @@ class HospitalAgent:
                     delta = chunk.get("message", {}).get("content", "")
                     if delta:
                         yield delta
-                return  # success
+                logger.info(f"[LLM] ✓ Answered by Ollama ({ollama_model})")
+                return
             except Exception as e:
                 err_str = str(e).lower()
                 logger.error(f"[LLM] Ollama/{ollama_model} failed: {e}.")
-                # VRAM exhausted — retry the same model on CPU (slow but functional)
                 if "resource limitations" in err_str or "out of memory" in err_str:
                     logger.warning(f"[LLM] Ollama/{ollama_model} VRAM error — retrying on CPU (slow)")
                     try:
                         cpu_opts = {**ollama_options, "num_gpu": 0}
-                        async for chunk in await client.chat(
+                        async for chunk in await ollama_client.chat(
                             model=ollama_model,
                             messages=messages,
                             format="json",
@@ -1121,11 +1362,12 @@ class HospitalAgent:
                             delta = chunk.get("message", {}).get("content", "")
                             if delta:
                                 yield delta
-                        return  # success on CPU
+                        logger.info(f"[LLM] ✓ Answered by Ollama/{ollama_model} (CPU fallback)")
+                        return
                     except Exception as e2:
                         logger.error(f"[LLM] Ollama/{ollama_model} CPU fallback failed: {e2}.")
 
-        # ── 5. All providers failed ────────────────────────────────────────
+        # ── All providers failed ───────────────────────────────────────────────
         logger.error("[LLM] All providers failed.")
         if self.language == "ur":
             speech = "سوری ... ابھی تکنیکی مسئلہ ہے ... تھوڑی دیر بعد کوشش کریں"
@@ -1156,28 +1398,35 @@ class HospitalAgent:
 
             if self.language == "ur":
                 result["speech"] = (
-                    f"بالکل جی ... {appt.patient_name} صاحب ... "
-                    f"ڈاکڑ {appt.doctor_name} کے ساتھ ... "
-                    f"{appt.appointment_date.strftime('%d %B')} کو ... "
-                    f"{appt.appointment_time} بجے ... "
-                    f"بکنگ نمبر {appt.id} ہے ... کوئی اور بات"
+                    f"بالکل جی، {appt.patient_name} صاحب، "
+                    f"آپ کا وقت بک ہوگیا، "
+                    f"ڈاکڑ {appt.doctor_name} کے ساتھ، "
+                    f"{appt.appointment_date.strftime('%d %B')} کو، "
+                    f"{appt.appointment_time}، "
+                    f"فون نمبر {appt.patient_phone}، "
+                    f"بکنگ نمبر {appt.id}، "
+                    f"وقت پر آ جائیں، اللہ حافظ"
                 )
             elif self.language == "ro":
                 result["speech"] = (
-                    f"Bilkul ji ... {appt.patient_name} sahab ... "
-                    f"Dr {appt.doctor_name} ke saath ... "
-                    f"{appt.appointment_date.strftime('%d %B')} ko ... "
-                    f"{appt.appointment_time} baje ... "
-                    f"booking number {appt.id} hai ... koi aur baat"
+                    f"Bilkul ji. {appt.patient_name} sahab, "
+                    f"aapki appointment book ho gayi hai. "
+                    f"Dr {appt.doctor_name} ke saath, "
+                    f"{appt.appointment_date.strftime('%d %B')} ko, "
+                    f"{appt.appointment_time} baje. "
+                    f"Phone number {appt.patient_phone}. "
+                    f"Booking number {appt.id}. "
+                    f"Waqt par aa jaein, Allah hafiz."
                 )
             else:
                 result["speech"] = (
-                    f"Perfect, you're all set! "
-                    f"{appt.patient_name}, your appointment with {appt.doctor_name} "
-                    f"is confirmed for {appt.appointment_date.strftime('%A, %B %d')} "
+                    f"You're all set, {appt.patient_name}! "
+                    f"Appointment confirmed with {appt.doctor_name} "
+                    f"on {appt.appointment_date.strftime('%A, %B %d')} "
                     f"at {appt.appointment_time}. "
-                    f"Your booking reference is #{appt.id}. "
-                    f"Is there anything else I can help you with?"
+                    f"Contact: {appt.patient_phone}. "
+                    f"Booking reference #{appt.id}. "
+                    f"Please arrive on time. Take care!"
                 )
             result["action"] = "ask"
             result["data"]["appointment_id"] = appt.id

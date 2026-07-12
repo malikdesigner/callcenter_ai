@@ -9,7 +9,11 @@ jinja2==3.1.4
 # Speech-to-Text (Whisper local GPU)
 faster-whisper==1.0.3
 
-# Text-to-Speech (XTTS v2 voice cloning)
+# Text-to-Speech
+f5-tts>=0.3.4          # F5-TTS voice cloning — English primary TTS
+edge-tts>=6.1.9        # Microsoft Neural Voices — Urdu/Roman Urdu primary TTS
+gTTS>=2.5.0            # Google TTS fallback (supports Urdu, free)
+pyttsx3==2.99          # Local offline fallback TTS (English only)
 TTS==0.22.0
 transformers==4.42.0   # Coqui TTS 0.22.0 is incompatible with transformers>=4.43 (BeamSearchScorer removed)
 

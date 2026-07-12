@@ -3,10 +3,35 @@ Speech-to-Text using faster-whisper.
 Runs locally on GPU. No API key needed.
 """
 
+import os
+import importlib
+
 from faster_whisper import WhisperModel
 import numpy as np
 from loguru import logger
 from config.settings import settings
+
+def _register_cuda_dlls():
+    """
+    On Windows, pip-installed NVIDIA packages put their DLLs in a subfolder
+    that Windows doesn't search by default. Register them explicitly so
+    ctranslate2 can find cublas64_12.dll and cudnn DLLs at runtime.
+    """
+    if os.name != "nt":
+        return
+    for pkg_name in ("nvidia_cublas_cu12", "nvidia_cudnn_cu12", "nvidia_cuda_runtime_cu12"):
+        try:
+            pkg = importlib.import_module(pkg_name)
+            pkg_dir = os.path.dirname(pkg.__file__)
+            for sub in ("bin", "lib", ""):
+                dll_dir = os.path.join(pkg_dir, sub) if sub else pkg_dir
+                if os.path.isdir(dll_dir):
+                    os.add_dll_directory(dll_dir)
+                    logger.debug(f"[STT] Registered DLL dir: {dll_dir}")
+        except ImportError:
+            pass
+
+_register_cuda_dlls()
 
 # ── Urdu post-transcription corrections ───────────────────────────────────────
 # Common Whisper mishearings specific to Pakistani Urdu phone calls.
@@ -37,6 +62,32 @@ def _normalize_urdu(text: str) -> str:
         text = text.replace(wrong, right)
     return text
 
+def _is_hallucination(text: str) -> bool:
+    """
+    Detect Whisper hallucinations: repeated words/phrases that indicate
+    the model is looping on background noise rather than real speech.
+    Examples: "Dr. Dr. Dr. Dr." / "the the the" / "ہاں ہاں ہاں ہاں"
+    """
+    words = text.strip().split()
+    if len(words) < 4:
+        return False
+    # Count how often the most frequent word appears
+    from collections import Counter
+    counts = Counter(w.lower().strip(".,?!") for w in words)
+    top_word, top_count = counts.most_common(1)[0]
+    # If one word makes up >60% of all words → hallucination
+    if top_count / len(words) > 0.60:
+        return True
+    # Detect short phrase repetition: "Dr. Smith Dr. Smith Dr. Smith"
+    for phrase_len in (2, 3):
+        if len(words) >= phrase_len * 3:
+            phrases = [" ".join(words[i:i+phrase_len]) for i in range(0, len(words)-phrase_len+1, phrase_len)]
+            phrase_counts = Counter(p.lower() for p in phrases)
+            top_phrase, top_phrase_count = phrase_counts.most_common(1)[0]
+            if top_phrase_count >= 3:
+                return True
+    return False
+
 
 class Transcriber:
     def __init__(self):
@@ -50,8 +101,10 @@ class Transcriber:
                 compute_type=compute,
             )
         except RuntimeError as e:
-            if "out of memory" in str(e).lower() and device == "cuda":
-                logger.warning("[STT] CUDA out of memory — retrying Whisper on CPU (int8)")
+            error_str = str(e).lower()
+            # Fall back to CPU if CUDA memory error OR CUDA library missing
+            if device == "cuda" and ("out of memory" in error_str or "cublas" in error_str or "cuda" in error_str):
+                logger.warning(f"[STT] CUDA initialization failed ({error_str}) — falling back to CPU (int8)")
                 self.model = WhisperModel(
                     settings.whisper_model,
                     device="cpu",
@@ -117,12 +170,21 @@ class Transcriber:
         parts = []
         seg_logprobs: list[float] = []
         seg_no_speech: list[float] = []
-        for seg in segments:
-            t = seg.text.strip()
-            if t and not t.startswith("[") and not t.startswith("("):
-                parts.append(t)
-            seg_logprobs.append(seg.avg_logprob)
-            seg_no_speech.append(seg.no_speech_prob)
+        try:
+            for seg in segments:
+                t = seg.text.strip()
+                if t and not t.startswith("[") and not t.startswith("("):
+                    parts.append(t)
+                seg_logprobs.append(seg.avg_logprob)
+                seg_no_speech.append(seg.no_speech_prob)
+        except RuntimeError as e:
+            error_str = str(e).lower()
+            if "cublas" in error_str or "cuda" in error_str:
+                logger.error(f"[STT] CUDA runtime error during transcription — switching model to CPU: {e}")
+                self.model = WhisperModel(settings.whisper_model, device="cpu", compute_type="int8")
+                # Return empty so STT filter requests a repeat from the user
+            else:
+                raise
 
         text = " ".join(parts).strip()
 
@@ -130,6 +192,11 @@ class Transcriber:
         avg_logprob   = sum(seg_logprobs) / len(seg_logprobs) if seg_logprobs else -1.5
         max_no_speech = max(seg_no_speech) if seg_no_speech else 1.0
         confidence = {"avg_logprob": avg_logprob, "no_speech_prob": max_no_speech}
+
+        # Reject Whisper hallucinations (looping repeated words from background noise)
+        if text and _is_hallucination(text):
+            logger.warning(f"[STT] Hallucination detected, discarding: '{text[:60]}...'")
+            text = ""
 
         # Apply language-specific post-processing corrections
         if lang == "ur" and text:

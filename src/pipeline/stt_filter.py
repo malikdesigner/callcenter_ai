@@ -37,13 +37,16 @@ def is_valid_input(text: str, confidence: dict, language: str = "ur") -> tuple[b
     # Let's enforce the new, stricter logprob or probability constraint.
     import math
     # Whisper logprob is natural log of probability. prob = exp(logprob).
+    # Urdu speech has more acoustic variation — use looser thresholds.
     prob = math.exp(avg_logprob)
-    if prob < 0.6:
-        logger.warning(f"[STT Filter] Rejected '{text}' - Low confidence ({prob:.2f} < 0.6)")
+    conf_threshold = 0.40 if language == "ur" else 0.50
+    noise_threshold = 0.65 if language == "ur" else 0.50
+    if prob < conf_threshold:
+        logger.warning(f"[STT Filter] Rejected '{text}' - Low confidence ({prob:.2f} < {conf_threshold})")
         return False, "low_confidence"
-        
-    if no_speech_prob > 0.4:
-        logger.warning(f"[STT Filter] Rejected '{text}' - High no_speech probability ({no_speech_prob:.2f} > 0.4)")
+
+    if no_speech_prob > noise_threshold:
+        logger.warning(f"[STT Filter] Rejected '{text}' - High no_speech probability ({no_speech_prob:.2f} > {noise_threshold})")
         return False, "no_speech"
         
     # 3. Repeated noise/gibberish (e.g. "گفار ہوا ہے ۔ ۔ ۔ ۔")

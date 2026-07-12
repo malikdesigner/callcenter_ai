@@ -10,12 +10,41 @@ Usage:
 """
 
 import asyncio
+import ctypes
+import glob
 import os
 import sys
 
-# CRITICAL FIX for Windows cuDNN Error 127:
-# We MUST import torch before ANY other ML library (like faster_whisper/ctranslate2)
-# is imported. Otherwise, ctranslate2 loads a conflicting cuDNN DLL first!
+# Pre-load NVIDIA DLLs from pip packages BEFORE ctranslate2 / torch are imported.
+# nvidia-cublas-cu12 / nvidia-cudnn-cu12 install DLLs to site-packages/nvidia/*/bin
+# but ctranslate2 uses LoadLibrary("cublas64_12.dll") by name — it won't find them
+# unless they're already in the Windows DLL cache or in PATH.
+# Solution: ctypes.CDLL() loads each DLL explicitly; Windows then caches it so
+# ctranslate2's LoadLibrary("cublas64_12.dll") reuses the cached handle.
+if os.name == 'nt':
+    _site = os.path.normpath(os.path.join(os.path.dirname(sys.executable), '..', 'Lib', 'site-packages'))
+    _nvidia_bins = [
+        os.path.normpath(d)
+        for d in glob.glob(os.path.join(_site, 'nvidia', '*', 'bin'))
+        if os.path.isdir(d)
+    ]
+    for _d in _nvidia_bins:
+        os.add_dll_directory(_d)
+    if _nvidia_bins:
+        os.environ['PATH'] = ';'.join(_nvidia_bins) + ';' + os.environ.get('PATH', '')
+    # Force-load the DLLs ctranslate2 needs so they're in the Windows DLL cache
+    _priority_dlls = ['cublas64_12.dll', 'cublasLt64_12.dll', 'cudnn64_9.dll']
+    for _bin_dir in _nvidia_bins:
+        for _dll_name in _priority_dlls:
+            _dll_path = os.path.join(_bin_dir, _dll_name)
+            if os.path.exists(_dll_path):
+                try:
+                    ctypes.CDLL(_dll_path)
+                except OSError:
+                    pass
+
+# CRITICAL: import torch AFTER dll directories are registered, but BEFORE
+# faster_whisper / ctranslate2 so torch's CUDA runtime loads first.
 import torch
 
 import uvicorn
@@ -57,12 +86,12 @@ def check_prerequisites():
         models = [m["name"] for m in r.json().get("models", [])]
         if not any(model.split(":")[0] in m for m in models):
             warnings.append(
-                f"  ⚠  Ollama model '{model}' not found (fallback only).\n"
+                f"  [!] Ollama model '{model}' not found (fallback only).\n"
                 f"     → Run:  ollama pull {model}"
             )
     except Exception:
         warnings.append(
-            "  ⚠  Ollama not running (fallback only) — cloud LLM will be used instead."
+            "  [!] Ollama not running (fallback only) — cloud LLM will be used instead."
         )
 
     if warnings:
@@ -112,6 +141,10 @@ async def serve():
     _free_port(8001)
     _free_port(8002)
     _free_port(8003)
+
+    # Load hospital knowledge base (admin-editable data/hospital_knowledge.json)
+    from src.llm.agent import _load_hospital_knowledge
+    _load_hospital_knowledge()
 
     # Load models once here — both server startup events will find them already loaded
     # and skip, preventing the concurrent-load OOM that happens when both fire simultaneously.
