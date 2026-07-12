@@ -36,6 +36,9 @@ scipy==1.13.1
 # Database
 sqlmodel==0.0.21
 
+# Twilio (WhatsApp notifications)
+twilio>=9.0.0
+
 # Utilities
 python-dotenv==1.0.0
 loguru==0.7.2

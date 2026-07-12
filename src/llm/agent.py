@@ -104,10 +104,14 @@ def _build_system_prompt(lang: str = "en") -> str:
         doctors = session.exec(select(Doctor).where(Doctor.is_active == True)).all()
         depts = session.exec(select(Department)).all()
 
-    # Build doctor list with specialty so LLM can match symptoms to the right doctor
+    # Build doctor list with specialty + fee so LLM can match symptoms and answer fee queries
     doctor_info = []
     for dept in depts:
-        dept_docs = [f"{d.name} ({d.specialty})" for d in doctors if d.department_name == dept.name]
+        dept_docs = []
+        for d in doctors:
+            if d.department_name == dept.name:
+                fee_part = f", fee={d.fee}" if d.fee else ""
+                dept_docs.append(f"{d.name} ({d.specialty}{fee_part})")
         if dept_docs:
             doctor_info.append(f"{dept.name.title()}: " + ", ".join(dept_docs))
     doctor_list_str = " | ".join(doctor_info)
@@ -1046,7 +1050,18 @@ class HospitalAgent:
                 else:
                     lines.append("RULE: Acknowledge what they said, then ask for the missing info in a natural, non-repetitive way.")
         else:
-            lines.append("ALL_INFO_COLLECTED: All info ready — proceed to confirmation.")
+            if self.language in ("ur", "ro"):
+                lines.append(
+                    "ALL_INFO_COLLECTED: Saari maloomat mil gayi — confirmation ke liye tayar.\n"
+                    "CONFIRMATION RULE: Sirf naam, doctor, date, time ka mukhtasar khulasa karo. "
+                    "Fee aur WhatsApp instructions system khud add kar dega — tum mat batao."
+                )
+            else:
+                lines.append(
+                    "ALL_INFO_COLLECTED: All info ready — proceed to confirmation.\n"
+                    "CONFIRMATION RULE: Read back name, doctor, date, and time only. "
+                    "Fee and WhatsApp instructions are added automatically — do not include them."
+                )
 
         if self.language == "ur":
             lines.append("CRITICAL LANGUAGE RULE: Respond in highly natural, fluent Pakistani Urdu. Do NOT translate English phrases literally. Use proper Urdu grammar, sentence structure, and vocabulary as a real human receptionist would.")
@@ -1403,9 +1418,10 @@ class HospitalAgent:
                     f"ڈاکڑ {appt.doctor_name} کے ساتھ، "
                     f"{appt.appointment_date.strftime('%d %B')} کو، "
                     f"{appt.appointment_time}، "
-                    f"فون نمبر {appt.patient_phone}، "
                     f"بکنگ نمبر {appt.id}، "
-                    f"وقت پر آ جائیں، اللہ حافظ"
+                    f"آپ کو ابھی WhatsApp پیغام آئے گا، "
+                    f"فیس جمع کروانے کا اسکرین شاٹ بھیجیں، "
+                    f"کیا کوئی اور مدد چاہیے؟"
                 )
             elif self.language == "ro":
                 result["speech"] = (
@@ -1414,9 +1430,10 @@ class HospitalAgent:
                     f"Dr {appt.doctor_name} ke saath, "
                     f"{appt.appointment_date.strftime('%d %B')} ko, "
                     f"{appt.appointment_time} baje. "
-                    f"Phone number {appt.patient_phone}. "
                     f"Booking number {appt.id}. "
-                    f"Waqt par aa jaein, Allah hafiz."
+                    f"Aapko abhi WhatsApp message aayega — "
+                    f"fee jama kerwane ka screenshot bhej dein. "
+                    f"Kya koi aur madad chahiye?"
                 )
             else:
                 result["speech"] = (
@@ -1424,9 +1441,10 @@ class HospitalAgent:
                     f"Appointment confirmed with {appt.doctor_name} "
                     f"on {appt.appointment_date.strftime('%A, %B %d')} "
                     f"at {appt.appointment_time}. "
-                    f"Contact: {appt.patient_phone}. "
                     f"Booking reference #{appt.id}. "
-                    f"Please arrive on time. Take care!"
+                    f"You'll receive a WhatsApp message shortly — "
+                    f"please send a screenshot of the fee payment. "
+                    f"Is there anything else I can help you with?"
                 )
             result["action"] = "ask"
             result["data"]["appointment_id"] = appt.id

@@ -7,7 +7,7 @@ import os
 from datetime import date, datetime
 from typing import Optional
 
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Field, Session, SQLModel, create_engine, select, text
 
 DATABASE_PATH = "data/appointments.db"
 DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
@@ -42,6 +42,7 @@ class Doctor(SQLModel, table=True):
     department_name: str = Field(index=True) # References Department.name
     is_active: bool = Field(default=True)
     specialty: str = ""
+    fee: Optional[str] = Field(default=None)  # e.g. "Rs. 1500"
 
 
 class DoctorSlot(SQLModel, table=True):
@@ -54,6 +55,16 @@ class DoctorSlot(SQLModel, table=True):
 def create_tables():
     os.makedirs("data", exist_ok=True)
     SQLModel.metadata.create_all(engine)
+    # Non-destructive migration: add new columns to existing tables
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE doctor ADD COLUMN fee TEXT",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # column already exists
 
 
 def get_session():

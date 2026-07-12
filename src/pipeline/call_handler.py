@@ -117,6 +117,11 @@ class CallHandler:
         # Silence gate: how long of silence triggers processing
         self._silence_gate = 2.0 if language in ("ur", "ro") else 1.5
 
+        # Inactivity timeout: seconds of silence before auto-ending in post_booking state
+        self._last_activity_ts: float = 0.0
+        self._inactivity_task = None
+        self._POST_BOOKING_TIMEOUT = 10.0  # seconds
+
     @property
     def is_active(self) -> bool:
         return self._is_active
@@ -149,6 +154,8 @@ class CallHandler:
         self._is_active = True
         self._speech_buffer = []
         self._last_speech_ts = None
+        self._last_activity_ts = 0.0
+        self._inactivity_task = asyncio.create_task(self._inactivity_monitor())
 
         greeting = await self.agent.get_greeting()
         logger.info(f"[{self.session_id}] Greeting: {greeting}")
@@ -212,6 +219,8 @@ class CallHandler:
 
     async def end_call(self):
         self._is_active = False
+        if self._inactivity_task and not self._inactivity_task.done():
+            self._inactivity_task.cancel()
         if self._turn_task and not self._turn_task.done():
             self._turn_task.cancel()
         await self._response_queue.put(None)
@@ -220,6 +229,42 @@ class CallHandler:
         self._processing = False
         self._vad.reset()
         logger.info(f"[{self.session_id}] Call ended.")
+
+    async def _inactivity_monitor(self):
+        """
+        Watches for silence after booking is complete.
+        If the patient doesn't respond within POST_BOOKING_TIMEOUT seconds,
+        Sara says goodbye and ends the call gracefully.
+        """
+        _FAREWELL = {
+            "ur": "اچھا جی، اللہ حافظ،",
+            "ro": "Theek hai, Allah hafiz.",
+            "en": "Alright, take care. Goodbye!",
+        }
+        while self._is_active:
+            await asyncio.sleep(1.0)
+            if not self._is_active:
+                break
+            if self.agent._flow_state != "post_booking":
+                continue
+            if self._last_activity_ts == 0.0:
+                continue
+            elapsed = time.time() - self._last_activity_ts
+            if elapsed >= self._POST_BOOKING_TIMEOUT:
+                logger.info(f"[{self.session_id}] Post-booking inactivity — auto-ending call")
+                farewell = _FAREWELL.get(self.agent.language, _FAREWELL["en"])
+                try:
+                    self._tts.set_language(self.agent.language)
+                    audio = await self._tts.synthesize(farewell)
+                    if audio:
+                        self._extend_playback_guard(audio)
+                        await self._response_queue.put(("audio", audio))
+                    await asyncio.sleep(len(audio) / 16000 + 0.5 if audio else 1.0)
+                except Exception as e:
+                    logger.warning(f"[{self.session_id}] Farewell TTS failed: {e}")
+                self._is_active = False
+                await self._response_queue.put(None)
+                break
 
     def _save_call_log(self):
         import json
@@ -283,6 +328,7 @@ class CallHandler:
                 self._speech_buffer.extend(list(self._pre_buffer))
             self._speech_buffer.extend(audio.tolist())
             self._last_speech_ts = time.time()
+            self._last_activity_ts = time.time()  # reset inactivity timer on user speech
             return
 
         # No speech
@@ -329,6 +375,63 @@ class CallHandler:
         
         cache = self.__class__._ack_cache.get(lang, [])
         return random.choice(cache) if cache else b""
+
+    async def _play_confirm_reminder(self) -> None:
+        """
+        After LLM reads back the booking summary, play a hardcoded line that:
+        1. States the doctor's fee (if set)
+        2. Tells the patient they will get a WhatsApp message and to send fee screenshot
+        3. Asks for final confirmation
+        """
+        from sqlmodel import Session, select as _select
+        from src.appointment.models import Doctor, engine as _engine
+
+        lang = self.agent.language
+        collected = self.agent._collected
+
+        # Fetch fee
+        fee = None
+        try:
+            doc_name = collected.get("doctor_name", "")
+            if doc_name:
+                with Session(_engine) as s:
+                    doc = s.exec(_select(Doctor).where(Doctor.name == doc_name)).first()
+                    if doc:
+                        fee = doc.fee
+        except Exception:
+            pass
+
+        if lang == "ur":
+            fee_part = f"ڈاکٹر کی فیس {fee} ہے، " if fee else ""
+            line = (
+                f"{fee_part}"
+                f"آپ کو ابھی WhatsApp پیغام آئے گا، "
+                f"فیس جمع کروانے کا اسکرین شاٹ بھیجیں، "
+                f"کیا میں یہ اپوائنٹمنٹ پکی کر دوں؟"
+            )
+        elif lang == "ro":
+            fee_part = f"Doctor ki fee {fee} hai. " if fee else ""
+            line = (
+                f"{fee_part}"
+                f"Aapko abhi WhatsApp message aayega — "
+                f"fee jama kerwane ka screenshot bhej dein. "
+                f"Kya main yeh appointment pakki kar doon?"
+            )
+        else:
+            fee_part = f"The consultation fee is {fee}. " if fee else ""
+            line = (
+                f"{fee_part}"
+                f"You'll receive a WhatsApp message shortly — "
+                f"please send a screenshot of the fee payment. "
+                f"Shall I confirm this appointment?"
+            )
+
+        self._tts.set_language(lang)
+        audio = await self._tts.synthesize(line)
+        if audio:
+            self._extend_playback_guard(audio)
+            await self._response_queue.put(("audio", audio))
+            await self._response_queue.put(("json", {"type": "agent_speech", "text": line}))
 
     def _extend_playback_guard(self, audio_bytes: bytes, margin: float = 0.6) -> None:
         """
@@ -480,10 +583,16 @@ class CallHandler:
                         port = result.get("data", {}).get("port", 8000)
                         await self._response_queue.put(("json", {"type": "redirect", "port": port}))
                         self._is_active = False
+                    elif action == "confirm":
+                        # Always append fee + WhatsApp reminder at confirmation —
+                        # LLM-generated summary already played; this line is hardcoded.
+                        await self._play_confirm_reminder()
 
             # Send full agent speech to transcript
             if agent_speech_parts:
                 await self._response_queue.put(("json", {"type": "agent_speech", "text": " ".join(agent_speech_parts)}))
+            # Reset inactivity timer after Sara finishes speaking
+            self._last_activity_ts = time.time()
 
         except Exception as e:
             logger.exception(f"[{self.session_id}] Turn error: {e}")

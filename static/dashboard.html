@@ -344,6 +344,9 @@
             <div class="nav-item" onclick="showTab('schedules')">
                 <span>⏰</span> Time Slots
             </div>
+            <div class="nav-item" onclick="showTab('hosp-info')">
+                <span>🏥</span> Hospital Info
+            </div>
             <a href="/" class="nav-item" style="margin-top: 2rem; opacity: 0.6;">
                 <span>📞</span> Call UI
             </a>
@@ -494,6 +497,10 @@
                     <label>Specialty</label>
                     <input type="text" id="doc-specialty" placeholder="e.g. Heart Surgeon">
                 </div>
+                <div>
+                    <label>Consultation Fee</label>
+                    <input type="text" id="doc-fee" placeholder="e.g. Rs. 1500">
+                </div>
                 <button class="btn-primary" onclick="handleDocSubmit()">Save Doctor</button>
             </div>
 
@@ -504,6 +511,7 @@
                             <th>Name</th>
                             <th>Department</th>
                             <th>Specialty</th>
+                            <th>Fee</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -549,6 +557,29 @@
                 </table>
             </div>
         </div>
+
+        <!-- TAB: Hospital Info -->
+        <div id="tab-hosp-info" class="tab-content">
+            <div class="section-header">
+                <h2>Hospital Information</h2>
+                <button class="btn-primary" onclick="saveHospInfo()">Save All Changes</button>
+            </div>
+
+            <div class="glass-panel">
+                <h3 style="margin-bottom:1.5rem; color:var(--accent)">OPD & Department Timings</h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem" id="timings-fields"></div>
+            </div>
+
+            <div class="glass-panel">
+                <h3 style="margin-bottom:1.5rem; color:var(--accent)">General Fees</h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem" id="fees-fields"></div>
+            </div>
+
+            <div class="glass-panel">
+                <h3 style="margin-bottom:1.5rem; color:var(--accent)">Policies</h3>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem" id="policies-fields"></div>
+            </div>
+        </div>
     </main>
 
     <!-- Modal for Transcripts -->
@@ -578,6 +609,7 @@
             if (tabId === 'departments') loadDepts();
             if (tabId === 'doctors') loadDocs();
             if (tabId === 'schedules') loadSlots();
+            if (tabId === 'hosp-info') loadHospInfo();
         }
 
         // ── API Helpers ───────────────────────────────────────────────────────────
@@ -700,6 +732,7 @@
         // ── Doctors ───────────────────────────────────────────────────────────────
         async function loadDocs() {
             const [docs, depts] = await Promise.all([api('/api/doctors'), api('/api/departments')]);
+            state.doctors = docs;
 
             // Update select dropdowns
             const selects = ['doc-dept-select', 'slot-doc-select'];
@@ -718,6 +751,7 @@
                 <td><strong>${d.name}</strong></td>
                 <td>${d.department_name.toUpperCase()}</td>
                 <td><span style="color: var(--text-dim)">${d.specialty || '-'}</span></td>
+                <td><span style="color: var(--accent)">${d.fee || '-'}</span></td>
                 <td><span style="color: ${d.is_active ? 'var(--success)' : 'var(--danger)'}">${d.is_active ? 'Active' : 'Inactive'}</span></td>
                 <td>
                     <button class="btn-action" onclick="editDoc(${d.id})">Edit</button>
@@ -731,12 +765,13 @@
             const name = document.getElementById('doc-name').value;
             const dept = document.getElementById('doc-dept-select').value;
             const spec = document.getElementById('doc-specialty').value;
+            const fee  = document.getElementById('doc-fee').value.trim() || null;
             if (!name || !dept) return;
 
             const method = state.editId ? 'PATCH' : 'POST';
             const url = state.editId ? `/api/doctors/${state.editId}` : '/api/doctors';
 
-            await api(url, { method, body: JSON.stringify({ name, department_name: dept, specialty: spec, is_active: true }) });
+            await api(url, { method, body: JSON.stringify({ name, department_name: dept, specialty: spec, is_active: true, fee }) });
             resetForm('doc');
             loadDocs();
         }
@@ -755,6 +790,7 @@
             document.getElementById('doc-name').value = doc.name;
             document.getElementById('doc-dept-select').value = doc.department_name;
             document.getElementById('doc-specialty').value = doc.specialty || '';
+            document.getElementById('doc-fee').value = doc.fee || '';
             document.querySelector('#tab-doctors .btn-primary').innerText = "Update Doctor";
         }
 
@@ -864,11 +900,52 @@
             if (prefix === 'doc') {
                 document.getElementById('doc-name').value = '';
                 document.getElementById('doc-specialty').value = '';
+                document.getElementById('doc-fee').value = '';
                 document.querySelector('#tab-doctors .btn-primary').innerText = "Save Doctor";
             }
             if (prefix === 'slot') {
                 document.querySelector('#tab-schedules .btn-primary').innerText = "Add Shift";
             }
+        }
+
+        // ── Hospital Info ─────────────────────────────────────────────────────────
+        let _hospInfoData = {};
+
+        function renderFields(containerId, data) {
+            const el = document.getElementById(containerId);
+            el.innerHTML = Object.entries(data).map(([k, v]) => `
+                <div>
+                    <label>${k.replace(/_/g,' ').toUpperCase()}</label>
+                    <input type="text" id="hinfo-${containerId}-${k}" value="${v}">
+                </div>
+            `).join('');
+        }
+
+        async function loadHospInfo() {
+            _hospInfoData = await api('/api/knowledge');
+            renderFields('timings-fields',  _hospInfoData.timings  || {});
+            renderFields('fees-fields',     _hospInfoData.fees     || {});
+            renderFields('policies-fields', _hospInfoData.policies || {});
+        }
+
+        function collectFields(containerId, keys) {
+            const out = {};
+            keys.forEach(k => {
+                const el = document.getElementById(`hinfo-${containerId}-${k}`);
+                if (el) out[k] = el.value;
+            });
+            return out;
+        }
+
+        async function saveHospInfo() {
+            const timings  = collectFields('timings-fields',  Object.keys(_hospInfoData.timings  || {}));
+            const fees     = collectFields('fees-fields',     Object.keys(_hospInfoData.fees     || {}));
+            const policies = collectFields('policies-fields', Object.keys(_hospInfoData.policies || {}));
+            const res = await api('/api/knowledge', {
+                method: 'PATCH',
+                body: JSON.stringify({ timings, fees, policies })
+            });
+            alert(res.message || 'Saved');
         }
 
         // Initial load

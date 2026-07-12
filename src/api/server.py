@@ -252,6 +252,7 @@ def create_app(language: str = None) -> FastAPI:
             doc.department_name = doc_data.department_name
             doc.specialty = doc_data.specialty
             doc.is_active = doc_data.is_active
+            doc.fee = doc_data.fee
             session.add(doc)
             session.commit()
             session.refresh(doc)
@@ -324,6 +325,38 @@ def create_app(language: str = None) -> FastAPI:
             session.delete(slot)
             session.commit()
         return {"message": "Slot deleted"}
+
+    # ── REST: Hospital Knowledge (timings, fees, policies) ────────────────────
+
+    _KNOWLEDGE_PATH = "data/hospital_knowledge.json"
+
+    @new_app.get("/api/knowledge")
+    def get_knowledge():
+        try:
+            with open(_KNOWLEDGE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Knowledge file not found")
+
+    @new_app.patch("/api/knowledge")
+    def update_knowledge(payload: dict):
+        try:
+            with open(_KNOWLEDGE_PATH, "r", encoding="utf-8") as f:
+                knowledge = json.load(f)
+            # Deep-merge only the sections passed in payload
+            for section, value in payload.items():
+                if isinstance(value, dict) and isinstance(knowledge.get(section), dict):
+                    knowledge[section].update(value)
+                else:
+                    knowledge[section] = value
+            with open(_KNOWLEDGE_PATH, "w", encoding="utf-8") as f:
+                json.dump(knowledge, f, ensure_ascii=False, indent=2)
+            # Invalidate cached knowledge so agent picks up changes immediately
+            import src.llm.agent as _agent_mod
+            _agent_mod._hospital_knowledge = None
+            return {"message": "Knowledge updated"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
     # ── REST: Manual Booking ───────────────────────────────────────────────────
 
