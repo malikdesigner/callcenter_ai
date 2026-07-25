@@ -1,12 +1,10 @@
 """
-Entry point for the AI Hospital Receptionist.
+AI Hospital Receptionist — Sara AI
 
-Usage:
-  1. Place your voice sample at:   voices/receptionist.wav
-  2. Run:  python main.py
-  3. Open: http://localhost:8000  (English)
-           http://localhost:8001  (Urdu)
-           http://localhost:8002  (Roman Urdu)
+Ports:
+  8000  English
+  8001  Urdu
+  8002  Language selector — Sara asks "English or Urdu?" and redirects the call
 """
 
 import asyncio
@@ -15,12 +13,9 @@ import glob
 import os
 import sys
 
-# Pre-load NVIDIA DLLs from pip packages BEFORE ctranslate2 / torch are imported.
+# Pre-load NVIDIA DLLs before ctranslate2 / torch are imported.
 # nvidia-cublas-cu12 / nvidia-cudnn-cu12 install DLLs to site-packages/nvidia/*/bin
-# but ctranslate2 uses LoadLibrary("cublas64_12.dll") by name — it won't find them
-# unless they're already in the Windows DLL cache or in PATH.
-# Solution: ctypes.CDLL() loads each DLL explicitly; Windows then caches it so
-# ctranslate2's LoadLibrary("cublas64_12.dll") reuses the cached handle.
+# but ctranslate2 uses LoadLibrary by name and won't find them unless pre-loaded.
 if os.name == 'nt':
     _site = os.path.normpath(os.path.join(os.path.dirname(sys.executable), '..', 'Lib', 'site-packages'))
     _nvidia_bins = [
@@ -32,10 +27,8 @@ if os.name == 'nt':
         os.add_dll_directory(_d)
     if _nvidia_bins:
         os.environ['PATH'] = ';'.join(_nvidia_bins) + ';' + os.environ.get('PATH', '')
-    # Force-load the DLLs ctranslate2 needs so they're in the Windows DLL cache
-    _priority_dlls = ['cublas64_12.dll', 'cublasLt64_12.dll', 'cudnn64_9.dll']
     for _bin_dir in _nvidia_bins:
-        for _dll_name in _priority_dlls:
+        for _dll_name in ['cublas64_12.dll', 'cublasLt64_12.dll', 'cudnn64_9.dll']:
             _dll_path = os.path.join(_bin_dir, _dll_name)
             if os.path.exists(_dll_path):
                 try:
@@ -43,73 +36,43 @@ if os.name == 'nt':
                 except OSError:
                     pass
 
-# CRITICAL: import torch AFTER dll directories are registered, but BEFORE
-# faster_whisper / ctranslate2 so torch's CUDA runtime loads first.
-import torch
+import torch  # noqa: F401 — must import after DLL registration, before faster-whisper
 
 import uvicorn
 from loguru import logger
 
 
 def check_prerequisites():
-    errors = []
     warnings = []
 
-    # Voice sample (optional — Edge-TTS is used and does NOT need a local voice file)
     voice_path = os.getenv("VOICE_SAMPLE_PATH", "voices/receptionist.wav")
     if not os.path.exists(voice_path):
         warnings.append(
-            f"  ⚠  Voice sample not found at '{voice_path}' (optional).\n"
-            f"     → Edge-TTS (cloud) is active and does not need a local voice file.\n"
-            f"     → This warning is safe to ignore unless you implement local voice cloning."
+            f"  Voice sample not found at '{voice_path}' (optional — Edge-TTS is used instead)."
         )
 
-    # Cloud LLM check — read via settings so .env values are picked up
     from config.settings import settings
-    has_cloud_llm = bool(
-        settings.hugging_face_token
-        or settings.gemini_api_key
-        or settings.groq_api_key
-    )
-    if not has_cloud_llm:
+    if not any([settings.gemini_api_key, settings.groq_api_key, getattr(settings, 'hugging_face_token', None)]):
         warnings.append(
-            "  ⚠  No cloud LLM configured (HUGGING_FACE_TOKEN / GEMINI_API_KEY / GROQ_API_KEY).\n"
-            "     → Falling back to local Ollama — make sure it is running."
+            "  No cloud LLM key configured — falling back to local Ollama."
         )
 
-    # Ollama reachability (optional — only used as fallback)
     try:
         import httpx
         from config.settings import settings as _s
         r = httpx.get(f"{_s.ollama_host}/api/tags", timeout=2)
         model = _s.ollama_model
-        models = [m["name"] for m in r.json().get("models", [])]
-        if not any(model.split(":")[0] in m for m in models):
-            warnings.append(
-                f"  [!] Ollama model '{model}' not found (fallback only).\n"
-                f"     → Run:  ollama pull {model}"
-            )
+        if not any(model.split(":")[0] in m for m in [x["name"] for x in r.json().get("models", [])]):
+            warnings.append(f"  Ollama model '{model}' not found — run: ollama pull {model}")
     except Exception:
-        warnings.append(
-            "  [!] Ollama not running (fallback only) — cloud LLM will be used instead."
-        )
+        warnings.append("  Ollama not running (fallback only) — cloud LLM will be used.")
 
     if warnings:
-        print("\n" + "="*60)
+        print("\n" + "="*55)
         print("  Warnings (non-fatal):")
-        print("="*60)
         for w in warnings:
             print(w)
-        print("="*60 + "\n")
-
-    if errors:
-        print("\n" + "="*60)
-        print("  Prerequisites not met:")
-        print("="*60)
-        for e in errors:
-            print(e)
-        print("="*60 + "\n")
-        sys.exit(1)
+        print("="*55 + "\n")
 
 
 def _free_port(port: int):
@@ -133,58 +96,41 @@ def _free_port(port: int):
 
 
 async def serve():
-    """Run both language servers in a single process so models load only once."""
     from src.api.server import create_app
     from src.pipeline.call_handler import CallHandler
 
-    _free_port(8000)
-    _free_port(8001)
-    _free_port(8002)
-    _free_port(8003)
+    for port in [8000, 8001, 8002]:
+        _free_port(port)
 
-    # Load hospital knowledge base (admin-editable data/hospital_knowledge.json)
     from src.llm.agent import _load_hospital_knowledge
     _load_hospital_knowledge()
 
-    # Load models once here — both server startup events will find them already loaded
-    # and skip, preventing the concurrent-load OOM that happens when both fire simultaneously.
-    logger.info("Loading models (once for all servers)...")
+    logger.info("Loading models...")
     CallHandler.load_models()
 
-    logger.info("Initializing multi-language support (Single-Process Mode)...")
+    en_app = create_app("en")   # English only
+    ur_app = create_app("ur")   # Urdu only
+    bi_app = create_app("bi")   # Sara asks caller "English or Urdu?" → redirects
 
-    en_app = create_app("en")
-    ur_app = create_app("ur")
-    ro_app = create_app("ro")
-    bi_app = create_app("bi")
+    servers = [
+        uvicorn.Server(uvicorn.Config(en_app, host="0.0.0.0", port=8000, log_level="warning", reload=False)),
+        uvicorn.Server(uvicorn.Config(ur_app, host="0.0.0.0", port=8001, log_level="warning", reload=False)),
+        uvicorn.Server(uvicorn.Config(bi_app, host="0.0.0.0", port=8002, log_level="warning", reload=False)),
+    ]
 
-    config_en = uvicorn.Config(en_app, host="0.0.0.0", port=8000,
-                               log_level="info", reload=False)
-    config_ur = uvicorn.Config(ur_app, host="0.0.0.0", port=8001,
-                               log_level="info", reload=False)
-    config_ro = uvicorn.Config(ro_app, host="0.0.0.0", port=8002,
-                               log_level="info", reload=False)
-    config_bi = uvicorn.Config(bi_app, host="0.0.0.0", port=8003,
-                               log_level="info", reload=False)
+    logger.info("Sara AI ready:")
+    logger.info("  English                → http://localhost:8000")
+    logger.info("  Urdu                   → http://localhost:8001")
+    logger.info("  Language selector call → http://localhost:8002")
+    logger.info("Press Ctrl+C to stop.")
 
-    server_en = uvicorn.Server(config_en)
-    server_ur = uvicorn.Server(config_ur)
-    server_ro = uvicorn.Server(config_ro)
-    server_bi = uvicorn.Server(config_bi)
-
-    logger.info("Starting English Version    at http://localhost:8000")
-    logger.info("Starting Urdu Version       at http://localhost:8001")
-    logger.info("Starting Roman Urdu Version at http://localhost:8002")
-    logger.info("Starting Bilingual          at http://localhost:8003")
-    logger.info("All servers running. Press Ctrl+C to stop.")
-
-    await asyncio.gather(server_en.serve(), server_ur.serve(), server_ro.serve(), server_bi.serve())
+    await asyncio.gather(*[s.serve() for s in servers])
 
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("  AI Hospital Receptionist (Sara AI)")
-    print("="*60)
+    print("\n" + "="*55)
+    print("  Sara AI — City Medical Hospital")
+    print("="*55)
 
     check_prerequisites()
 

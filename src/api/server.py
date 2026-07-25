@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from src.appointment.models import Appointment, Doctor, Department, DoctorSlot, create_tables, engine
-from src.appointment.booking import BookingSystem, resolve_department
+from src.appointment.booking import BookingSystem
 from src.pipeline.call_handler import CallHandler
 from src.api.twilio_handler import router as twilio_router
 from sqlmodel import Session, select
@@ -50,13 +50,7 @@ def create_app(language: str = None) -> FastAPI:
     async def root():
         if lang == "ur":
             return FileResponse("static/index_ur.html")
-        if lang == "ro":
-            return FileResponse("static/index_ro.html")
-        return FileResponse("static/index.html")
-
-    @new_app.get("/urdu")
-    async def urdu_redirect():
-        return FileResponse("static/index_ur.html")
+        return FileResponse("static/index_select.html" if lang == "bi" else "static/index.html")
 
     @new_app.get("/dashboard")
     async def dashboard():
@@ -389,7 +383,3 @@ def create_app(language: str = None) -> FastAPI:
             raise HTTPException(status_code=500, detail="Internal server error")
 
     return new_app
-
-
-# ── Backward-compat: allow `uvicorn src.api.server:app` directly ──────────────
-app = create_app()

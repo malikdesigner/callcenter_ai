@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sara AI | AI Hospital Receptionist</title>
+    <title>Sara AI | City Medical Hospital</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -30,13 +30,12 @@
             min-height: 100vh;
             display: flex;
             margin: 0;
-            background-image: 
+            background-image:
                 radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.1) 0%, transparent 40%),
                 radial-gradient(circle at 100% 100%, rgba(56, 189, 248, 0.05) 0%, transparent 40%);
             background-attachment: fixed;
         }
 
-        /* ── Sidebar ── */
         aside {
             width: var(--sidebar-w);
             background: rgba(15, 23, 42, 0.85);
@@ -71,25 +70,14 @@
             display: flex;
             align-items: center;
             gap: 1rem;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s;
             cursor: pointer;
             font-weight: 600;
             border: 1px solid transparent;
         }
+        .nav-item:hover { color: var(--text-main); background: rgba(255,255,255,0.05); }
+        .nav-item.active { background: rgba(56,189,248,0.1); color: var(--accent); border-color: rgba(56,189,248,0.2); }
 
-        .nav-item:hover {
-            color: var(--text-main);
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .nav-item.active {
-            background: rgba(56, 189, 248, 0.1);
-            color: var(--accent);
-            border-color: rgba(56, 189, 248, 0.2);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        /* ── Main content ── */
         main {
             flex: 1;
             margin-left: var(--sidebar-w);
@@ -101,22 +89,21 @@
             max-width: 1800px;
         }
 
-        /* ── Glass Panels ── */
         .glass-panel {
             background: var(--bg-card);
             border: 1px solid var(--card-border);
             border-radius: 2rem;
             padding: 2.5rem;
             backdrop-filter: blur(16px);
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
             display: flex;
             flex-direction: column;
             gap: 2rem;
         }
 
-        .section-header h1 { 
-            font-size: 2rem; 
-            font-weight: 800; 
+        .section-header h1 {
+            font-size: 2rem;
+            font-weight: 800;
             margin-bottom: 0.5rem;
             background: linear-gradient(to right, #fff, #94a3b8);
             -webkit-background-clip: text;
@@ -132,15 +119,14 @@
             border-radius: 1.25rem;
             font-size: 0.95rem;
             font-weight: 700;
-            background: rgba(15, 23, 42, 0.6);
+            background: rgba(15,23,42,0.6);
             border: 1px solid var(--card-border);
             transition: all 0.4s;
         }
-
         .status-idle    { color: var(--text-dim); }
-        .status-active  { color: var(--success); border-color: rgba(34, 197, 94, 0.3); box-shadow: 0 0 20px rgba(34, 197, 94, 0.1); }
-        .status-ended   { color: var(--danger); border-color: rgba(239, 68, 68, 0.3); }
-        .status-loading { color: var(--accent); border-color: rgba(56, 189, 248, 0.3); }
+        .status-active  { color: var(--success); border-color: rgba(34,197,94,0.3); box-shadow: 0 0 20px rgba(34,197,94,0.1); }
+        .status-ended   { color: var(--danger); border-color: rgba(239,68,68,0.3); }
+        .status-loading { color: var(--accent); border-color: rgba(56,189,248,0.3); }
 
         .dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; position: relative; }
         .dot.pulse::after {
@@ -155,11 +141,10 @@
 
         .viz-container {
             height: 140px;
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(0,0,0,0.2);
             border-radius: 1.5rem;
             overflow: hidden;
             border: 1px solid var(--card-border);
-            position: relative;
         }
         #visualiser { width: 100%; height: 100%; }
 
@@ -172,34 +157,21 @@
             font-size: 1.1rem;
             font-weight: 700;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s;
             border: none;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 0.8rem;
-            overflow: hidden;
         }
-
-        .btn-start {
-            background: #fff;
-            color: #000;
-            box-shadow: 0 10px 25px -5px rgba(255, 255, 255, 0.1);
-        }
-        .btn-start:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 20px 30px -10px rgba(56, 189, 248, 0.4); background: var(--accent); color: #000; }
-
-        .btn-end {
-            background: rgba(239, 68, 68, 0.1);
-            color: var(--danger);
-            border: 1px solid rgba(239, 68, 68, 0.2);
-        }
+        .btn-start { background: #fff; color: #000; box-shadow: 0 10px 25px -5px rgba(255,255,255,0.1); }
+        .btn-start:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 20px 30px -10px rgba(56,189,248,0.4); background: var(--accent); }
+        .btn-end { background: rgba(239,68,68,0.1); color: var(--danger); border: 1px solid rgba(239,68,68,0.2); }
         .btn-end:hover:not(:disabled) { background: var(--danger); color: #fff; }
+        .btn-call:disabled { opacity: 0.2; cursor: not-allowed; }
 
-        .btn-call:disabled { opacity: 0.2; cursor: not-allowed; filter: grayscale(1); }
-
-        /* ── Transcript ── */
         .transcript-wrapper {
-            background: rgba(15, 23, 42, 0.4);
+            background: rgba(15,23,42,0.4);
             border-radius: 2rem;
             border: 1px solid var(--card-border);
             height: calc(100vh - 6rem);
@@ -207,18 +179,15 @@
             flex-direction: column;
             overflow: hidden;
         }
-
         .transcript-header {
             padding: 1.5rem 2rem;
             border-bottom: 1px solid var(--card-border);
-            background: rgba(255, 255, 255, 0.02);
             font-weight: 700;
             font-size: 0.9rem;
             text-transform: uppercase;
             letter-spacing: 0.1em;
             color: var(--text-dim);
         }
-
         .transcript-area {
             flex: 1;
             padding: 2.5rem;
@@ -228,39 +197,18 @@
             gap: 1.5rem;
             scroll-behavior: smooth;
         }
-
         .chat-msg { display: flex; flex-direction: column; gap: 0.6rem; max-width: 80%; }
         .chat-msg .author { font-size: 0.8rem; font-weight: 700; color: var(--text-dim); margin-left: 0.5rem; }
-        .chat-msg .bubble { 
-            padding: 1.25rem 1.5rem; 
-            border-radius: 1.5rem; 
-            line-height: 1.6; 
-            font-size: 1.05rem;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        }
-
+        .chat-msg .bubble { padding: 1.25rem 1.5rem; border-radius: 1.5rem; line-height: 1.6; font-size: 1.05rem; }
         .chat-msg.user { align-self: flex-end; }
         .chat-msg.user .author { align-self: flex-end; margin-right: 0.5rem; }
-        .chat-msg.user .bubble { 
-            background: linear-gradient(135deg, var(--accent) 0%, #0ea5e9 100%);
-            color: #000;
-            border-bottom-right-radius: 0.4rem;
-        }
-
-        .chat-msg.agent .bubble { 
-            background: var(--bg-card);
-            color: var(--text-main);
-            border: 1px solid var(--card-border);
-            border-bottom-left-radius: 0.4rem;
-        }
-
+        .chat-msg.user .bubble { background: linear-gradient(135deg, var(--accent), #0ea5e9); color: #000; border-bottom-right-radius: 0.4rem; }
+        .chat-msg.agent .bubble { background: var(--bg-card); border: 1px solid var(--card-border); border-bottom-left-radius: 0.4rem; }
         .chat-msg.system { align-self: center; width: 100%; opacity: 0.6; }
         .chat-msg.system .bubble { background: transparent; border: none; text-align: center; font-style: italic; font-size: 0.9rem; color: var(--text-dim); }
 
         ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
     </style>
 </head>
 <body>
@@ -272,14 +220,9 @@
         </svg>
         SARA AI
     </div>
-    
     <nav>
-        <div class="nav-item active">
-            <span>🎤</span> Live Session
-        </div>
-        <a href="/dashboard" class="nav-item">
-            <span>⚙️</span> Admin Panel
-        </a>
+        <div class="nav-item active"><span>🌐</span> Language Select</div>
+        <a href="/dashboard" class="nav-item"><span>⚙️</span> Admin Panel</a>
     </nav>
 </aside>
 
@@ -287,13 +230,14 @@
     <div class="call-interface">
         <div class="glass-panel">
             <div class="section-header">
-                <h1>Hospital AI Agent</h1>
-                <p>Real-time healthcare scheduling and assistance powered by Sara AI.</p>
+                <h1>City Medical Hospital</h1>
+                <p>Start the call and Sara will ask your language preference.<br>
+                   <span style="font-family:serif;font-size:0.95rem">کال شروع کریں — سارہ آپ سے زبان پوچھے گی۔</span></p>
             </div>
 
             <div id="statusPill" class="status-badge status-idle">
                 <span class="dot" id="statusDot"></span>
-                <span id="statusText">Agent Standby</span>
+                <span id="statusText">Waiting to start</span>
             </div>
 
             <div class="viz-container">
@@ -303,26 +247,25 @@
             <div class="controls">
                 <button class="btn-call btn-start" id="startBtn" onclick="startCall()">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.21h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.81a16 16 0 0 0 6.29 6.29l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                    Initiate Conversation
+                    Start Call / کال شروع کریں
                 </button>
                 <button class="btn-call btn-end" id="endBtn" onclick="endCall()" disabled>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.62A2 2 0 0 1 3.38 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.36 8.91"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                    Terminate Session
+                    End Call
                 </button>
             </div>
 
-            <div style="margin-top: 1rem; padding: 1.25rem; background: rgba(56, 189, 248, 0.1); border-radius: 1.25rem; font-size: 0.85rem; color: var(--accent); line-height: 1.5;">
-                <strong>System Note:</strong> The AI agent is currently monitoring for vocal activity. Please speak clearly to begin the booking process.
+            <div style="padding:1.25rem;background:rgba(56,189,248,0.08);border-radius:1.25rem;font-size:0.85rem;color:var(--accent);line-height:1.7;">
+                <strong>English:</strong> Say <em>"English"</em> to continue in English.<br>
+                <strong>اردو:</strong> اردو میں بات کرنے کے لیے <em>"اردو"</em> کہیں۔
             </div>
         </div>
     </div>
 
     <div class="transcript-wrapper">
-        <div class="transcript-header">Real-time Transcript Feed</div>
+        <div class="transcript-header">Live Transcript</div>
         <div class="transcript-area" id="transcript">
-            <div class="chat-msg system">
-                <div class="bubble">Waiting for session start...</div>
-            </div>
+            <div class="chat-msg system"><div class="bubble">Waiting for session start...</div></div>
         </div>
     </div>
 </main>
@@ -340,21 +283,17 @@
 
     function setStatus(state, text) {
         const pill = document.getElementById('statusPill');
-        const dot  = document.getElementById('statusDot');
-        const txt  = document.getElementById('statusText');
         pill.className = 'status-badge status-' + state;
-        dot.className  = 'dot' + (state === 'active' ? ' pulse' : '');
-        txt.textContent = text;
+        document.getElementById('statusDot').className = 'dot' + (state === 'active' ? ' pulse' : '');
+        document.getElementById('statusText').textContent = text;
     }
 
     function addMessage(type, text) {
         const box = document.getElementById('transcript');
-        const labels = { user: 'PATIENT', agent: 'SARA AI', system: '' };
+        const labels = { user: 'CALLER', agent: 'SARA AI', system: '' };
         const div = document.createElement('div');
         div.className = 'chat-msg ' + type;
-        div.innerHTML = `
-            ${labels[type] ? `<span class="author">${labels[type]}</span>` : ''}
-            <div class="bubble">${text}</div>`;
+        div.innerHTML = `${labels[type] ? `<span class="author">${labels[type]}</span>` : ''}<div class="bubble">${text}</div>`;
         box.appendChild(div);
         box.scrollTop = box.scrollHeight;
     }
@@ -412,7 +351,7 @@
 
         ws.onopen = () => {
             isCallActive = true;
-            setStatus('loading', 'Opening Channel...');
+            setStatus('loading', 'Connecting...');
             document.getElementById('startBtn').disabled = true;
             document.getElementById('endBtn').disabled = false;
             startVisualiser();
@@ -431,16 +370,10 @@
                     addMessage('system', 'Call ended.');
                     cleanupCall();
                 }
-                else if (msg.type === 'redirect') {
-                    const label = msg.port === 8001 ? 'اردو سروس' : 'English service';
-                    addMessage('system', `Connecting to ${label}...`);
-                    setStatus('loading', 'Redirecting...');
-                    // Mark autostart so the target page starts the call immediately
-                    localStorage.setItem('sara_autostart', JSON.stringify({ port: msg.port, ts: Date.now() }));
-                    setTimeout(() => {
-                        cleanupCall();
-                        window.location.href = `${location.protocol}//${location.hostname}:${msg.port}`;
-                    }, 2800);
+                else if (msg.type === 'language_switched') {
+                    const label = msg.language === 'ur' ? 'اردو' : 'English';
+                    addMessage('system', `Switched to ${label}`);
+                    setStatus('active', `Sara — ${label}`);
                 }
             }
         };
@@ -452,8 +385,6 @@
         processorNode.onaudioprocess = (e) => {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 const f32 = e.inputBuffer.getChannelData(0);
-                // Barge-in: 600ms cooldown + threshold 0.038 + 3-frame debounce
-                // prevents speaker echo from cutting Sara off mid-sentence.
                 if (isSaraPlaying && (Date.now() - saraSpeakStartTime) > 600) {
                     let sum = 0;
                     for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
@@ -508,20 +439,6 @@
         }
         draw();
     }
-
-    // Auto-start if redirected from bilingual selector (port 8002)
-    window.addEventListener('load', () => {
-        try {
-            const raw = localStorage.getItem('sara_autostart');
-            if (!raw) return;
-            const data = JSON.parse(raw);
-            const age = Date.now() - data.ts;
-            if (age < 30000 && data.port === parseInt(location.port)) {
-                localStorage.removeItem('sara_autostart');
-                setTimeout(startCall, 600); // brief pause then auto-start
-            }
-        } catch(e) {}
-    });
 </script>
 </body>
 </html>

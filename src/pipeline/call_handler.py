@@ -130,7 +130,7 @@ class CallHandler:
 
 
     async def consume_responses(self):
-        while self._is_active:
+        while True:
             try:
                 item = await self._response_queue.get()
                 if item is None:
@@ -579,10 +579,23 @@ class CallHandler:
                     logger.info(f"[{self.session_id}] Action: {action}")
                     if action == "end":
                         self._is_active = False
-                    elif action == "redirect":
-                        port = result.get("data", {}).get("port", 8000)
-                        await self._response_queue.put(("json", {"type": "redirect", "port": port}))
-                        self._is_active = False
+                    elif action == "switch_language":
+                        lang = result.get("data", {}).get("language", "en")
+                        self.agent.language = lang
+                        self.agent._fast_engine.language = lang
+                        self.agent._language_chosen = True
+                        self.agent._bilingual_mode = False
+                        self.language = lang
+                        self._tts.set_language(lang)
+                        self._silence_gate = 2.0 if lang in ("ur", "ro") else 1.5
+                        await self._response_queue.put(("json", {"type": "language_switched", "language": lang}))
+                        greeting = await self.agent.get_greeting()
+                        greeting_clean = _sanitize_for_tts(greeting)
+                        g_audio = await self._tts.synthesize(greeting_clean)
+                        if g_audio:
+                            self._extend_playback_guard(g_audio)
+                            await self._response_queue.put(("audio", g_audio))
+                        await self._response_queue.put(("json", {"type": "agent_speech", "text": greeting}))
                     elif action == "confirm":
                         # Always append fee + WhatsApp reminder at confirmation —
                         # LLM-generated summary already played; this line is hardcoded.

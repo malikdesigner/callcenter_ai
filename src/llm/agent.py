@@ -420,15 +420,13 @@ class HospitalAgent:
                 logger.info(f"[Agent] Bilingual: Whisper detected Urdu audio (transcript='{user_text}')")
 
             if pref == "ur":
-                self.language = "ur"   # so TTS uses Urdu voice for the farewell line
-                speech = "بالکل جی ... ابھی اردو سروس سے جوڑتی ہوں"
-                target_port = 8001
-                logger.info("[Agent] Bilingual: Urdu detected → redirecting to port 8001")
+                lang = "ur"
+                speech = "جی ضرور!"
+                logger.info("[Agent] Bilingual: Urdu detected → switching to Urdu in-place")
             elif pref == "en":
-                self.language = "en"
-                speech = "Perfect! Connecting you to English service now."
-                target_port = 8000
-                logger.info("[Agent] Bilingual: English detected → redirecting to port 8000")
+                lang = "en"
+                speech = "Sure!"
+                logger.info("[Agent] Bilingual: English detected → switching to English in-place")
             else:
                 speech = "سمجھی نئیں ... اردو یا English کہیں / Please say Urdu or English"
                 logger.info(f"[Agent] Bilingual: unclear (transcript='{user_text}', audio_lang={audio_language})")
@@ -438,11 +436,14 @@ class HospitalAgent:
                 yield {"speech": speech, "action": "ask", "data": {}}
                 return
 
-            # Language confirmed — play farewell then redirect browser to the right server
+            # Language confirmed — switch in-place, no disconnect
+            self.language = lang
+            self._language_chosen = True
+            self._bilingual_mode = False
             yield speech
             self._history.append({"role": "user", "content": user_text})
             self._history.append({"role": "assistant", "content": speech})
-            yield {"speech": speech, "action": "redirect", "data": {"port": target_port}}
+            yield {"speech": speech, "action": "switch_language", "data": {"language": lang}}
             return
 
         # ── Symptom → department pre-fill (no LLM needed) ────────────────
@@ -552,17 +553,38 @@ class HospitalAgent:
                     fast = self._execute_booking(fast)
                     self._awaiting_confirmation = False
                     self._flow_state = "post_booking"
+                    self._history.append({"role": "user", "content": user_text})
+                    self._history.append({"role": "assistant", "content": fast.get("speech", "")})
+                    if len(self._history) > 16:
+                        self._history = self._history[-16:]
+                    if fast.get("speech"):
+                        yield fast["speech"]
+                    yield fast
+                    return
                 else:
                     self._flow_state = self._compute_flow_state()
 
-                self._history.append({"role": "user", "content": user_text})
-                self._history.append({"role": "assistant", "content": fast.get("speech", "")})
-                if len(self._history) > 16:
-                    self._history = self._history[-16:]
-                if fast.get("speech"):
-                    yield fast["speech"]
-                yield fast
-                return
+                # If all info is now collected, yield the fast ack then chain immediately
+                # to the LLM for the confirmation summary — no need to wait for another turn.
+                if self._flow_state == "confirm_booking":
+                    self._history.append({"role": "user", "content": user_text})
+                    self._history.append({"role": "assistant", "content": fast.get("speech", "")})
+                    if len(self._history) > 16:
+                        self._history = self._history[-16:]
+                    if fast.get("speech"):
+                        yield fast["speech"]
+                    # Fall through to LLM with a synthetic trigger so it generates the summary
+                    user_text = "جی" if self.language in ("ur", "ro") else "okay"
+                    # (don't return — fall through to _chat_stream below)
+                else:
+                    self._history.append({"role": "user", "content": user_text})
+                    self._history.append({"role": "assistant", "content": fast.get("speech", "")})
+                    if len(self._history) > 16:
+                        self._history = self._history[-16:]
+                    if fast.get("speech"):
+                        yield fast["speech"]
+                    yield fast
+                    return
 
         async for content in self._chat_stream(user_text, policy_state=policy_state, nlg_constraint=nlg_constraint):
             full_json_str += content
@@ -1280,12 +1302,15 @@ class HospitalAgent:
                 logger.info(f"[LLM] Trying Gemini ({settings.gemini_model}) [key {tag}]")
                 try:
                     for attempt in range(2):  # retry once on empty response
-                        stream = await gemini_client.chat.completions.create(
-                            model=settings.gemini_model,
-                            messages=messages,
-                            temperature=0.2 if attempt == 0 else 0.4,
-                            max_tokens=1200,
-                            stream=True,
+                        stream = await asyncio.wait_for(
+                            gemini_client.chat.completions.create(
+                                model=settings.gemini_model,
+                                messages=messages,
+                                temperature=0.2 if attempt == 0 else 0.4,
+                                max_tokens=1200,
+                                stream=True,
+                            ),
+                            timeout=12.0,
                         )
                         chars_received = 0
                         async for chunk in stream:
@@ -1301,6 +1326,8 @@ class HospitalAgent:
                         continue
                     logger.info(f"[LLM] ✓ Answered by Gemini ({settings.gemini_model}) [key {tag}]")
                     return
+                except asyncio.TimeoutError:
+                    logger.warning(f"[LLM] Gemini key {tag} timed out (12s) — trying next key.")
                 except Exception as e:
                     err_str = str(e)
                     _daily_exhausted = (
@@ -1319,7 +1346,40 @@ class HospitalAgent:
                         logger.error(f"[LLM] Gemini key {tag} failed — reason: {e}")
 
             if all_keys:
-                logger.warning("[LLM] All Gemini keys failed — falling back to Ollama.")
+                logger.warning("[LLM] All Gemini keys failed — trying Groq.")
+
+        # ── Groq — fast cloud fallback (Urdu + English) ───────────────────────
+        if settings.groq_api_key:
+            groq_client = AsyncOpenAI(
+                api_key=settings.groq_api_key,
+                base_url="https://api.groq.com/openai/v1",
+            )
+            logger.info(f"[LLM] Trying Groq ({settings.groq_model})")
+            try:
+                stream = await asyncio.wait_for(
+                    groq_client.chat.completions.create(
+                        model=settings.groq_model,
+                        messages=messages,
+                        temperature=0.2,
+                        max_tokens=600,
+                        stream=True,
+                    ),
+                    timeout=10.0,
+                )
+                chars_received = 0
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+                        chars_received += len(delta)
+                if chars_received > 0:
+                    logger.info(f"[LLM] ✓ Answered by Groq ({settings.groq_model})")
+                    return
+                logger.warning("[LLM] Groq returned empty response — falling back to Ollama.")
+            except asyncio.TimeoutError:
+                logger.warning("[LLM] Groq timed out (10s) — falling back to Ollama.")
+            except Exception as e:
+                logger.error(f"[LLM] Groq failed: {e} — falling back to Ollama.")
 
         # ── Ollama (local) — primary for English, fallback for Urdu/RO ────────
         from ollama import AsyncClient

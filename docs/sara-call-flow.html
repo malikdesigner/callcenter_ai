@@ -1,0 +1,1285 @@
+
+<title>Sara AI — Call Flow Reference</title>
+<style>
+/* ── Tokens ─────────────────────────────────────────── */
+:root {
+  --bg:          #F5F6FA;
+  --surface:     #FFFFFF;
+  --surface-2:   #EEF0F7;
+  --border:      #DDE1EE;
+  --text:        #111827;
+  --text-2:      #4B5563;
+  --text-3:      #8A93A8;
+
+  --en:          #2057D9;
+  --en-tint:     #EBF0FF;
+  --en-mid:      #93B0F5;
+  --ur:          #0B8F5E;
+  --ur-tint:     #E8F8F2;
+  --ur-mid:      #5BC4A0;
+  --bi:          #6D28D9;
+  --bi-tint:     #F0EBFF;
+
+  --fast-bg:     #FEF3C7;
+  --fast-text:   #92400E;
+  --llm-bg:      #E0E7FF;
+  --llm-text:    #3730A3;
+  --hard-bg:     #FCE7F3;
+  --hard-text:   #831843;
+  --sys-bg:      #F3F4F6;
+  --sys-text:    #374151;
+
+  --nav-w:       240px;
+  --radius:      8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #0D1626;
+    --surface:   #162033;
+    --surface-2: #1E2D45;
+    --border:    #253552;
+    --text:      #EEF1FA;
+    --text-2:    #8A93A8;
+    --text-3:    #4B5A74;
+    --en-tint:   #1A2B50;
+    --ur-tint:   #0D2820;
+    --bi-tint:   #22144A;
+    --fast-bg:   #2A1F00;
+    --fast-text: #FCD34D;
+    --llm-bg:    #1A1A40;
+    --llm-text:  #A5B4FC;
+    --hard-bg:   #2A0A1E;
+    --hard-text: #F9A8D4;
+    --sys-bg:    #1F2937;
+    --sys-text:  #9CA3AF;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:        #0D1626;
+  --surface:   #162033;
+  --surface-2: #1E2D45;
+  --border:    #253552;
+  --text:      #EEF1FA;
+  --text-2:    #8A93A8;
+  --text-3:    #4B5A74;
+  --en-tint:   #1A2B50;
+  --ur-tint:   #0D2820;
+  --bi-tint:   #22144A;
+  --fast-bg:   #2A1F00;
+  --fast-text: #FCD34D;
+  --llm-bg:    #1A1A40;
+  --llm-text:  #A5B4FC;
+  --hard-bg:   #2A0A1E;
+  --hard-text: #F9A8D4;
+  --sys-bg:    #1F2937;
+  --sys-text:  #9CA3AF;
+}
+:root[data-theme="light"] {
+  --bg:        #F5F6FA;
+  --surface:   #FFFFFF;
+  --surface-2: #EEF0F7;
+  --border:    #DDE1EE;
+  --text:      #111827;
+  --text-2:    #4B5563;
+  --text-3:    #8A93A8;
+  --en-tint:   #EBF0FF;
+  --ur-tint:   #E8F8F2;
+  --bi-tint:   #F0EBFF;
+  --fast-bg:   #FEF3C7;
+  --fast-text: #92400E;
+  --llm-bg:    #E0E7FF;
+  --llm-text:  #3730A3;
+  --hard-bg:   #FCE7F3;
+  --hard-text: #831843;
+  --sys-bg:    #F3F4F6;
+  --sys-text:  #374151;
+}
+
+/* ── Reset ──────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text);
+  background: var(--bg);
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Nav ────────────────────────────────────────────── */
+nav {
+  width: var(--nav-w);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  padding: 32px 0;
+}
+.nav-logo {
+  padding: 0 20px 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.nav-logo-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+.nav-logo-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 2px;
+}
+nav a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 20px;
+  text-decoration: none;
+  font-size: 12.5px;
+  color: var(--text-2);
+  border-left: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+nav a:hover { color: var(--text); background: var(--surface-2); }
+nav a.en { border-left-color: var(--en); color: var(--en); background: var(--en-tint); font-weight: 600; }
+nav a.ur { border-left-color: var(--ur); color: var(--ur); background: var(--ur-tint); font-weight: 600; }
+nav a.bi { border-left-color: var(--bi); color: var(--bi); background: var(--bi-tint); font-weight: 600; }
+nav .nav-group {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+  padding: 16px 20px 4px;
+  font-weight: 600;
+}
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-en { background: var(--en); }
+.dot-ur { background: var(--ur); }
+.dot-bi { background: var(--bi); }
+
+/* ── Main ───────────────────────────────────────────── */
+main {
+  flex: 1;
+  min-width: 0;
+  padding: 48px 52px;
+  max-width: 960px;
+}
+
+/* ── Page header ────────────────────────────────────── */
+.page-header {
+  margin-bottom: 52px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+}
+.page-eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  margin-bottom: 10px;
+}
+.page-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px;
+  text-wrap: balance;
+  line-height: 1.2;
+}
+.page-desc {
+  margin-top: 12px;
+  font-size: 14.5px;
+  color: var(--text-2);
+  max-width: 580px;
+  line-height: 1.7;
+}
+.port-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+.port-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+}
+.port-chip code { font-size: 11px; font-family: 'Consolas', 'SF Mono', monospace; }
+.port-chip .dot { width: 6px; height: 6px; }
+
+/* ── Section titles ─────────────────────────────────── */
+.section {
+  margin-bottom: 56px;
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.section-stripe {
+  width: 4px;
+  height: 28px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.section-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.section-sub {
+  font-size: 12px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 2px;
+}
+
+/* ── Pipeline ────────────────────────────────────────── */
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 24px;
+  overflow-x: auto;
+  margin-bottom: 10px;
+}
+.pipe-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.pipe-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-align: center;
+  line-height: 1.3;
+}
+.pipe-sub {
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: 'Consolas', 'SF Mono', monospace;
+  text-align: center;
+}
+.pipe-icon {
+  width: 38px; height: 38px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px;
+}
+.pipe-arrow {
+  color: var(--text-3);
+  padding: 0 10px;
+  font-size: 16px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 10px;
+}
+
+/* ── Flow timeline ──────────────────────────────────── */
+.flow-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 56px;
+}
+@media (max-width: 700px) { .flow-grid { grid-template-columns: 1fr; } }
+
+.flow-col { }
+.flow-col-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid;
+}
+.flow-col-header.en { border-color: var(--en); }
+.flow-col-header.ur { border-color: var(--ur); }
+.flow-col-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 17px;
+  font-weight: 700;
+}
+.flow-col-port {
+  font-size: 11px;
+  font-family: 'Consolas', 'SF Mono', monospace;
+  color: var(--text-3);
+  margin-left: auto;
+}
+
+.timeline { position: relative; padding-left: 28px; }
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 9px; top: 6px; bottom: 6px;
+  width: 2px;
+  background: var(--border);
+  border-radius: 1px;
+}
+.t-step {
+  position: relative;
+  margin-bottom: 18px;
+}
+.t-dot {
+  position: absolute;
+  left: -23px;
+  top: 5px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  background: var(--border);
+}
+.t-step.en .t-dot { background: var(--en); }
+.t-step.ur .t-dot { background: var(--ur); }
+.t-step.terminal .t-dot { width: 12px; height: 12px; left: -24px; top: 4px; }
+.t-step.terminal.en .t-dot { background: var(--en); }
+.t-step.terminal.ur .t-dot { background: var(--ur); }
+
+.t-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.t-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 11px 14px;
+}
+.t-step.en .t-card { border-left: 3px solid var(--en); }
+.t-step.ur .t-card { border-left: 3px solid var(--ur); }
+
+.speech {
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.55;
+}
+.speech.sara {
+  font-style: italic;
+}
+.speech em { font-style: normal; color: var(--text-3); }
+.speech-who {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+.speech-who.sara-en { color: var(--en); }
+.speech-who.sara-ur { color: var(--ur); }
+.speech-who.user { color: var(--text-3); }
+
+.badge-row {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.badge {
+  font-size: 10px;
+  font-family: 'Consolas', 'SF Mono', monospace;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.badge-fast { background: var(--fast-bg); color: var(--fast-text); }
+.badge-llm  { background: var(--llm-bg);  color: var(--llm-text); }
+.badge-hard { background: var(--hard-bg); color: var(--hard-text); }
+.badge-sys  { background: var(--sys-bg);  color: var(--sys-text); }
+.badge-action { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+
+.t-note {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+.ur-text {
+  font-size: 14px;
+  direction: rtl;
+  unicode-bidi: embed;
+  line-height: 1.8;
+  font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Traditional Arabic', 'Segoe UI', sans-serif;
+}
+
+/* ── Bilingual section ──────────────────────────────── */
+.bi-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+.bi-header {
+  background: var(--bi-tint);
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bi-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--bi);
+}
+.bi-body { padding: 20px; }
+
+.detect-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+.detect-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.detect-card h4 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 8px;
+}
+.detect-card.en h4 { color: var(--en); }
+.detect-card.ur h4 { color: var(--ur); }
+.detect-card ul {
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.detect-card li::before { content: '→ '; color: var(--text-3); }
+
+/* ── LLM chain ──────────────────────────────────────── */
+.llm-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.llm-provider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+}
+.llm-rank {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Consolas', 'SF Mono', monospace;
+  color: var(--text-3);
+  width: 22px;
+  flex-shrink: 0;
+}
+.llm-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+.llm-detail {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.llm-timeout {
+  font-size: 11px;
+  font-family: 'Consolas', 'SF Mono', monospace;
+  padding: 2px 8px;
+  background: var(--sys-bg);
+  color: var(--sys-text);
+  border-radius: 4px;
+}
+.llm-langs {
+  display: flex;
+  gap: 4px;
+}
+.lang-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.lang-pill.en { background: var(--en-tint); color: var(--en); }
+.lang-pill.ur { background: var(--ur-tint); color: var(--ur); }
+
+.llm-arrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 16px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.llm-arrow::before { content: '↓'; }
+
+/* ── Edge cases table ───────────────────────────────── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+th {
+  text-align: left;
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  vertical-align: top;
+}
+tr:last-child td { border-bottom: none; }
+td code {
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 12px;
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--text);
+}
+td strong { color: var(--text); font-weight: 600; }
+
+/* ── Divider ────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 48px 0;
+}
+</style>
+
+<!-- Page -->
+<nav>
+  <div class="nav-logo">
+    <div class="nav-logo-title">Sara AI</div>
+    <div class="nav-logo-sub">Call Flow Reference</div>
+  </div>
+
+  <div class="nav-group">Overview</div>
+  <a href="#pipeline">Audio Pipeline</a>
+  <a href="#ports">Ports &amp; Modes</a>
+
+  <div class="nav-group">Flows</div>
+  <a href="#english" class="en"><span class="dot dot-en"></span>English — 8000</a>
+  <a href="#urdu" class="ur"><span class="dot dot-ur"></span>Urdu — 8001</a>
+  <a href="#bilingual" class="bi"><span class="dot dot-bi"></span>Bilingual — 8002</a>
+
+  <div class="nav-group">System</div>
+  <a href="#llm">LLM Chain</a>
+  <a href="#components">Components</a>
+  <a href="#edge">Edge Cases</a>
+</nav>
+
+<main>
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="page-eyebrow">City Medical Hospital · Internal Reference</div>
+    <div class="page-title">Sara AI — Complete Call Flow</div>
+    <div class="page-desc">
+      End-to-end dialogue flow for both language modes, including which component
+      handles each step, what Sara says, and how actions are resolved.
+    </div>
+    <div class="port-row">
+      <div class="port-chip"><span class="dot dot-en"></span><code>:8000</code> English</div>
+      <div class="port-chip"><span class="dot dot-ur"></span><code>:8001</code> Urdu</div>
+      <div class="port-chip"><span class="dot dot-bi"></span><code>:8002</code> Bilingual selector</div>
+      <div class="port-chip">📊 <code>:8000/dashboard</code> Admin</div>
+    </div>
+  </div>
+
+  <!-- Audio Pipeline -->
+  <div class="section" id="pipeline">
+    <div class="section-header">
+      <div class="section-stripe" style="background:var(--text-3)"></div>
+      <div>
+        <div class="section-title">Audio Pipeline</div>
+        <div class="section-sub">Every call, every turn</div>
+      </div>
+    </div>
+    <div class="pipeline">
+      <div class="pipe-node">
+        <div class="pipe-icon">🎙️</div>
+        <div class="pipe-label">Mic / PCM</div>
+        <div class="pipe-sub">float32 · 16kHz</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node">
+        <div class="pipe-icon">📡</div>
+        <div class="pipe-label">VAD</div>
+        <div class="pipe-sub">Silero</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node">
+        <div class="pipe-icon">📝</div>
+        <div class="pipe-label">STT</div>
+        <div class="pipe-sub">Whisper large-v3</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node">
+        <div class="pipe-icon">🔍</div>
+        <div class="pipe-label">STT Filter</div>
+        <div class="pipe-sub">confidence · gibberish</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node">
+        <div class="pipe-icon">✅</div>
+        <div class="pipe-label">Semantic Val.</div>
+        <div class="pipe-sub">state-aware</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node">
+        <div class="pipe-icon">🧭</div>
+        <div class="pipe-label">Policy</div>
+        <div class="pipe-sub">intent · hard-fallback</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node">
+        <div class="pipe-icon">⚡</div>
+        <div class="pipe-label">Fast Engine</div>
+        <div class="pipe-sub">name · phone · date · time</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node">
+        <div class="pipe-icon">🤖</div>
+        <div class="pipe-label">LLM Agent</div>
+        <div class="pipe-sub">symptoms · doctor · confirm</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-node">
+        <div class="pipe-icon">🔊</div>
+        <div class="pipe-label">TTS</div>
+        <div class="pipe-sub">Edge-TTS streaming</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text-3);margin-top:8px;">
+      Micro-acknowledgment ("جی..." / "Okay...") plays instantly from cache while LLM generates. Barge-in suppression active during Sara's playback window.
+    </p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- English + Urdu side by side -->
+  <div id="english"></div>
+  <div id="urdu"></div>
+
+  <div class="flow-grid">
+
+    <!-- English Column -->
+    <div class="flow-col">
+      <div class="flow-col-header en">
+        <span class="dot dot-en" style="width:10px;height:10px;"></span>
+        <div>
+          <div class="flow-col-title">English Flow</div>
+          <div style="font-size:11px;color:var(--text-3);">en-US-AriaNeural · Whisper EN</div>
+        </div>
+        <div class="flow-col-port">:8000</div>
+      </div>
+
+      <div class="timeline">
+
+        <div class="t-step en">
+          <div class="t-dot"></div>
+          <div class="t-label">Call connects</div>
+          <div class="t-card">
+            <div class="speech-who sara-en">Sara</div>
+            <div class="speech sara">"Thank you for calling City Medical Hospital, this is Sara. How can I help you?"</div>
+            <div class="badge-row">
+              <span class="badge badge-llm">LLM greeter</span>
+              <span class="badge badge-action">cached after 1st call</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step en">
+          <div class="t-dot"></div>
+          <div class="t-label">Collect name</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech">"My name is Ahmed"</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-en">Sara</div>
+            <div class="speech sara">"Got it, Ahmed. Could I get your mobile number please?"</div>
+            <div class="badge-row">
+              <span class="badge badge-fast">Fast Engine</span>
+              <span class="badge badge-action">action: ask · patient_name</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step en">
+          <div class="t-dot"></div>
+          <div class="t-label">Collect phone</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech">"03001234567"</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-en">Sara</div>
+            <div class="speech sara">"Thank you. What's the reason for your visit — any symptoms or concerns?"</div>
+            <div class="badge-row">
+              <span class="badge badge-fast">Fast Engine</span>
+              <span class="badge badge-action">action: ask · patient_phone</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step en">
+          <div class="t-dot"></div>
+          <div class="t-label">Symptoms → Doctor</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech">"I have a severe headache and dizziness"</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-en">Sara</div>
+            <div class="speech sara">"I'm sorry to hear that. For headache and dizziness, I'd recommend Dr. Kamran Baig — our neurologist. Shall I book an appointment with them?"</div>
+            <div class="badge-row">
+              <span class="badge badge-llm">LLM</span>
+              <span class="badge badge-action">action: ask · department · doctor_name</span>
+            </div>
+            <div class="t-note">Empathy tone applied. Doctor auto-matched from symptom→department lookup.</div>
+          </div>
+        </div>
+
+        <div class="t-step en">
+          <div class="t-dot"></div>
+          <div class="t-label">Collect date</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech">"Sure, this Friday"</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-en">Sara</div>
+            <div class="speech sara">"For Friday — Dr. Kamran Baig has these slots available: 9:00 AM, 9:30 AM, 10:00 AM. Which time works for you?"</div>
+            <div class="badge-row">
+              <span class="badge badge-fast">Fast Engine</span>
+              <span class="badge badge-action">date parsed · DB slots fetched</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step en">
+          <div class="t-dot"></div>
+          <div class="t-label">Collect time → chain</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech">"10 AM please"</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-en">Sara</div>
+            <div class="speech sara">"Perfect — booking you in for 10:00 AM. One moment… <em>[immediately chains to LLM]</em>"</div>
+            <div class="speech sara" style="margin-top:6px;">"Okay Ahmed, just to confirm — Dr. Kamran Baig, this Friday at 10:00 AM."</div>
+            <div class="badge-row">
+              <span class="badge badge-fast">Fast Engine → LLM chain</span>
+              <span class="badge badge-action">no 2nd user turn needed</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step en">
+          <div class="t-dot"></div>
+          <div class="t-label">Fee + WhatsApp reminder</div>
+          <div class="t-card">
+            <div class="speech-who sara-en">Sara (hardcoded)</div>
+            <div class="speech sara">"The consultation fee is Rs. 1500. You'll receive a WhatsApp message shortly — please send a screenshot of the fee payment. Shall I confirm this appointment?"</div>
+            <div class="badge-row">
+              <span class="badge badge-hard">Hardcoded</span>
+              <span class="badge badge-action">action: confirm · _play_confirm_reminder()</span>
+            </div>
+            <div class="t-note">Fee fetched from DB by doctor name. LLM never speaks fee — this fires automatically.</div>
+          </div>
+        </div>
+
+        <div class="t-step en">
+          <div class="t-dot"></div>
+          <div class="t-label">User confirms</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech">"Yes, confirm"</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-en">Sara</div>
+            <div class="speech sara">"Your appointment is confirmed — Dr. Kamran Baig on Friday at 10:00 AM. Booking #42. You'll receive a WhatsApp message shortly — please send a screenshot of the fee payment. Is there anything else I can help you with?"</div>
+            <div class="badge-row">
+              <span class="badge badge-sys">DB write</span>
+              <span class="badge badge-action">action: booking · flow_state: post_booking</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step en terminal">
+          <div class="t-dot"></div>
+          <div class="t-label">Call ends</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech">"No, that's all" <em>(or 10s silence)</em></div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-en">Sara</div>
+            <div class="speech sara">"Alright, take care. Goodbye!"</div>
+            <div class="badge-row">
+              <span class="badge badge-sys">Inactivity monitor</span>
+              <span class="badge badge-action">action: end · WebSocket closed</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Urdu Column -->
+    <div class="flow-col">
+      <div class="flow-col-header ur">
+        <span class="dot dot-ur" style="width:10px;height:10px;"></span>
+        <div>
+          <div class="flow-col-title">Urdu Flow</div>
+          <div style="font-size:11px;color:var(--text-3);">ur-PK-UzmaNeural · Whisper UR</div>
+        </div>
+        <div class="flow-col-port">:8001</div>
+      </div>
+
+      <div class="timeline">
+
+        <div class="t-step ur">
+          <div class="t-dot"></div>
+          <div class="t-label">Call connects</div>
+          <div class="t-card">
+            <div class="speech-who sara-ur">Sara</div>
+            <div class="speech sara ur-text">السلام علیکم ... میں سارہ ہوں ... آپکا نام؟</div>
+            <div class="badge-row">
+              <span class="badge badge-llm">LLM greeter</span>
+              <span class="badge badge-action">Gemini → 6–8 Urdu words</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step ur">
+          <div class="t-dot"></div>
+          <div class="t-label">Collect name</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech ur-text">جی میرا نام نوید ہے</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-ur">Sara</div>
+            <div class="speech sara ur-text">جی نوید صاحب ... آپکا موبائل نمبر بتا دیجیے</div>
+            <div class="badge-row">
+              <span class="badge badge-fast">Fast Engine</span>
+              <span class="badge badge-action">action: ask · patient_name</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step ur">
+          <div class="t-dot"></div>
+          <div class="t-label">Collect phone</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech ur-text">میرا فون نمبر ہے 03001234567</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-ur">Sara</div>
+            <div class="speech sara ur-text">شکریہ ... آپکو کیا تکلیف ہے؟</div>
+            <div class="badge-row">
+              <span class="badge badge-fast">Fast Engine</span>
+              <span class="badge badge-action">action: ask · patient_phone</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step ur">
+          <div class="t-dot"></div>
+          <div class="t-label">Symptoms → Doctor</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech ur-text">مجھے سر میں درد ہے اور چکر آتے ہیں</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-ur">Sara</div>
+            <div class="speech sara ur-text">اچھا، مجھے سن کر افسوس ہوا، فکر نہ کریں، سر درد کے لیے ہمارے پاس نیورولوجسٹ ڈاکٹر کامران بیگ ہیں، کیا میں ان کے ساتھ آپ کا وقت بک کر دوں؟</div>
+            <div class="badge-row">
+              <span class="badge badge-llm">LLM (Gemini)</span>
+              <span class="badge badge-action">action: ask · doctor_name · department</span>
+            </div>
+            <div class="t-note">Empathy tone. system prompt rule: banned words like براہ کرم / جناب enforced.</div>
+          </div>
+        </div>
+
+        <div class="t-step ur">
+          <div class="t-dot"></div>
+          <div class="t-label">Collect date</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech ur-text">جی، جمعہ کو</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-ur">Sara</div>
+            <div class="speech sara ur-text">جی ... جمعہ کو ... ڈاکٹر کامران بیگ کے ساتھ یہ وقت دستیاب ہے ... 09:00 AM، 09:30 AM، 10:00 AM ... کون سا وقت چاہیے؟</div>
+            <div class="badge-row">
+              <span class="badge badge-fast">Fast Engine</span>
+              <span class="badge badge-action">Urdu day parsed · DB slots</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step ur">
+          <div class="t-dot"></div>
+          <div class="t-label">Collect time → chain</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech ur-text">صبح دس بجے کر دیجئے</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-ur">Sara</div>
+            <div class="speech sara ur-text" style="margin-bottom:6px">جی ... 10:00 AM بجے بکنگ ہو رہی ہے ... ایک لمحہ <em style="font-style:normal;direction:ltr;unicode-bidi:embed;">[immediately chains to LLM]</em></div>
+            <div class="speech sara ur-text">جی نوید صاحب، بہت شکریہ، ڈاکٹر کامران بیگ کے ساتھ جمعہ کو صبح 10 بجے۔</div>
+            <div class="badge-row">
+              <span class="badge badge-fast">Fast Engine → LLM chain</span>
+              <span class="badge badge-action">no 2nd user turn needed</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step ur">
+          <div class="t-dot"></div>
+          <div class="t-label">Fee + WhatsApp reminder</div>
+          <div class="t-card">
+            <div class="speech-who sara-ur">Sara (hardcoded)</div>
+            <div class="speech sara ur-text">ڈاکٹر کی فیس 1500 روپے ہے، آپ کو ابھی WhatsApp پیغام آئے گا، فیس جمع کروانے کا اسکرین شاٹ بھیجیں، کیا میں یہ اپوائنٹمنٹ پکی کر دوں؟</div>
+            <div class="badge-row">
+              <span class="badge badge-hard">Hardcoded</span>
+              <span class="badge badge-action">action: confirm · _play_confirm_reminder()</span>
+            </div>
+            <div class="t-note">Fee fetched from DB. Fires after LLM summary, before user confirms.</div>
+          </div>
+        </div>
+
+        <div class="t-step ur">
+          <div class="t-dot"></div>
+          <div class="t-label">User confirms</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech ur-text">جی، کر دیں</div>
+            <div style="margin:8px 0;height:1px;background:var(--border)"></div>
+            <div class="speech-who sara-ur">Sara</div>
+            <div class="speech sara ur-text">بالکل جی، نوید صاحب، آپ کا وقت بک ہوگیا، ڈاکڑ کامران بیگ کے ساتھ، جمعہ کو، 10:00 AM، بکنگ نمبر 42، آپ کو ابھی WhatsApp پیغام آئے گا، فیس جمع کروانے کا اسکرین شاٹ بھیجیں، کیا کوئی اور مدد چاہیے؟</div>
+            <div class="badge-row">
+              <span class="badge badge-sys">DB write</span>
+              <span class="badge badge-action">action: booking · flow_state: post_booking</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="t-step ur terminal">
+          <div class="t-dot"></div>
+          <div class="t-label">Call ends</div>
+          <div class="t-card">
+            <div class="speech-who user">User</div>
+            <div class="speech ur-text">نہیں، بس شکریہ</div>
+            <div class="speech" style="color:var(--text-3);font-size:12px;margin-top:2px;margin-bottom:6px;">or 10 seconds of silence</div>
+            <div class="speech-who sara-ur">Sara</div>
+            <div class="speech sara ur-text">اچھا جی، اللہ حافظ،</div>
+            <div class="badge-row">
+              <span class="badge badge-sys">Inactivity monitor</span>
+              <span class="badge badge-action">action: end · WebSocket closed</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Bilingual -->
+  <div class="section" id="bilingual">
+    <div class="section-header">
+      <div class="section-stripe" style="background:var(--bi)"></div>
+      <div>
+        <div class="section-title">Bilingual Selector — Port 8002</div>
+        <div class="section-sub">Language detection · in-place switch · no reconnect</div>
+      </div>
+    </div>
+
+    <div class="bi-section">
+      <div class="bi-header">
+        <span class="dot dot-bi" style="width:8px;height:8px;"></span>
+        <div class="bi-title">Call connects on :8002</div>
+      </div>
+      <div class="bi-body">
+        <div class="speech-who" style="color:var(--bi);">Sara (bilingual greeting)</div>
+        <div class="speech sara" style="margin-bottom:12px;">
+          "To continue in English, say English.&ensp;<span class="ur-text" style="font-size:13px;">اردو میں جاری رکھنے کے لیے اردو کہیں۔</span>"
+        </div>
+        <p style="font-size:12.5px;color:var(--text-2);margin-bottom:14px;">
+          Two detection signals are combined. Text-pattern detection runs on the transcript; Whisper audio-language detection is used as ground truth when text-pattern returns no match (handles hallucinated Latin words from Urdu speech like "or do" → still detects audio is Urdu).
+        </p>
+        <div class="detect-grid">
+          <div class="detect-card en">
+            <h4>User says "English"</h4>
+            <ul>
+              <li>Pattern match: <code>english</code></li>
+              <li>Sara: "Sure!"</li>
+              <li><code>action: switch_language · en</code></li>
+              <li>Agent flips: <code>language="en"</code></li>
+              <li><code>_fast_engine.language="en"</code></li>
+              <li>TTS → <code>en-US-AriaNeural</code></li>
+              <li>LLM plays English greeting</li>
+              <li>Call continues as English flow</li>
+            </ul>
+          </div>
+          <div class="detect-card ur">
+            <h4>User says "اردو" / "Urdu"</h4>
+            <ul>
+              <li>Pattern: Urdu chars / "urdu" text</li>
+              <li>Whisper: audio_lang = "ur" (fallback)</li>
+              <li>Sara: <span class="ur-text" style="font-size:12px;">جی ضرور!</span></li>
+              <li><code>action: switch_language · ur</code></li>
+              <li>Agent flips: <code>language="ur"</code></li>
+              <li><code>_fast_engine.language="ur"</code></li>
+              <li>TTS → <code>ur-PK-UzmaNeural</code></li>
+              <li>LLM plays Urdu greeting</li>
+              <li>Call continues as Urdu flow</li>
+            </ul>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-3);margin-top:12px;">
+          If unclear: Sara says <em>"سمجھی نئیں ... اردو یا English کہیں / Please say Urdu or English"</em> and waits. No disconnection at any point — same WebSocket throughout.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- LLM Chain -->
+  <div class="section" id="llm">
+    <div class="section-header">
+      <div class="section-stripe" style="background:var(--bi)"></div>
+      <div>
+        <div class="section-title">LLM Fallback Chain</div>
+        <div class="section-sub">Gemini → Groq → Ollama</div>
+      </div>
+    </div>
+
+    <div class="llm-chain">
+      <div class="llm-provider">
+        <div class="llm-rank">1</div>
+        <div>
+          <div class="llm-name">Gemini</div>
+          <div class="llm-detail">gemini-3.5-flash · up to 6 API keys rotating · skipped for English</div>
+        </div>
+        <div class="llm-langs">
+          <span class="lang-pill ur">UR</span>
+          <span class="lang-pill ur" style="background:var(--ur-tint)">RO</span>
+        </div>
+        <div class="llm-timeout">timeout 12s</div>
+      </div>
+      <div class="llm-arrow" style="margin-left:22px;font-size:11.5px;color:var(--text-3);">
+        On 503 / timeout / quota exhausted → try next key → all keys fail → Groq
+      </div>
+      <div class="llm-provider">
+        <div class="llm-rank">2</div>
+        <div>
+          <div class="llm-name">Groq</div>
+          <div class="llm-detail">llama-3.1-8b-instant · fast cloud, rarely overloaded</div>
+        </div>
+        <div class="llm-langs">
+          <span class="lang-pill en">EN</span>
+          <span class="lang-pill ur">UR</span>
+          <span class="lang-pill ur" style="background:var(--ur-tint)">RO</span>
+        </div>
+        <div class="llm-timeout">timeout 10s</div>
+      </div>
+      <div class="llm-arrow" style="margin-left:22px;font-size:11.5px;color:var(--text-3);">
+        On failure / timeout → Ollama
+      </div>
+      <div class="llm-provider">
+        <div class="llm-rank">3</div>
+        <div>
+          <div class="llm-name">Ollama (local)</div>
+          <div class="llm-detail">Configured model · GPU → CPU fallback on VRAM error · primary for English</div>
+        </div>
+        <div class="llm-langs">
+          <span class="lang-pill en">EN</span>
+          <span class="lang-pill ur">UR</span>
+        </div>
+        <div class="llm-timeout">no timeout</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text-3);margin-top:12px;">
+      Gemini daily-quota exhausted keys are cached per process and skipped on future calls. Groq was added after Gemini 503 incidents caused ~2-minute waits; Groq typically responds in 1–2s.
+    </p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Components -->
+  <div class="section" id="components">
+    <div class="section-header">
+      <div class="section-stripe" style="background:var(--text-3)"></div>
+      <div>
+        <div class="section-title">Key Components</div>
+        <div class="section-sub">What handles what</div>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>Handles</th>
+          <th>When it fires</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Fast Engine</strong> <span class="badge badge-fast" style="font-size:10px;">FAST</span></td>
+          <td>Name, phone, date, time — structured inputs with clear answers</td>
+          <td>Flow state is one of: <code>collect_name · collect_phone · collect_date · collect_time · confirm_booking</code></td>
+        </tr>
+        <tr>
+          <td><strong>LLM Agent</strong> <span class="badge badge-llm" style="font-size:10px;">LLM</span></td>
+          <td>Symptoms, doctor recommendation, corrections, confusion, confirmation summary</td>
+          <td>Fast Engine returns <code>None</code>, or confirmation chain triggered</td>
+        </tr>
+        <tr>
+          <td><strong>_play_confirm_reminder()</strong> <span class="badge badge-hard" style="font-size:10px;">HARDCODED</span></td>
+          <td>Fee amount + WhatsApp screenshot instruction + "confirm?" question</td>
+          <td>Always fires after <code>action: confirm</code> — LLM never speaks fee</td>
+        </tr>
+        <tr>
+          <td><strong>Inactivity Monitor</strong></td>
+          <td>Auto-ends call if patient goes silent after booking</td>
+          <td><code>flow_state = post_booking</code> + 10 seconds of no audio</td>
+        </tr>
+        <tr>
+          <td><strong>Micro-ack Cache</strong></td>
+          <td>Instant filler ("جی..." / "Okay...") while LLM generates</td>
+          <td>Every turn before LLM response starts; randomly picks one variant</td>
+        </tr>
+        <tr>
+          <td><strong>Barge-in Guard</strong></td>
+          <td>Suppresses VAD while Sara is playing audio</td>
+          <td>Active for estimated playback duration + 0.6s margin</td>
+        </tr>
+        <tr>
+          <td><strong>Greeting Cache</strong></td>
+          <td>Serves pre-synthesized greeting audio on repeat calls</td>
+          <td>MD5 hash of greeting text → <code>data/cache/greeting_*.bin</code>. Skipped for bilingual greetings.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Edge Cases -->
+  <div class="section" id="edge">
+    <div class="section-header">
+      <div class="section-stripe" style="background:var(--text-3)"></div>
+      <div>
+        <div class="section-title">Edge Cases &amp; Fallbacks</div>
+        <div class="section-sub">What Sara does when things go wrong</div>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Situation</th>
+          <th>Sara's response</th>
+          <th>Mechanism</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Low-confidence STT</strong></td>
+          <td>UR: <span class="ur-text" style="font-size:12px;">آواز واضح نئیں آئی ... دوبارہ بتا دیجیے</span><br>EN: "Sorry, I didn't catch that clearly — could you repeat?"</td>
+          <td><code>STT Filter</code> confidence gate below threshold</td>
+        </tr>
+        <tr>
+          <td><strong>Gibberish / noise burst</strong></td>
+          <td>Same as low-confidence above</td>
+          <td>Gibberish detector in STT Filter</td>
+        </tr>
+        <tr>
+          <td><strong>Off-topic / semantic mismatch</strong></td>
+          <td>Polite redirect using policy fallback text</td>
+          <td>Semantic validator → intent = GARBAGE → policy hard fallback</td>
+        </tr>
+        <tr>
+          <td><strong>User corrects doctor / date</strong></td>
+          <td>UR: <span class="ur-text" style="font-size:12px;">جی بالکل، کوئی مسئلہ نہیں</span> then re-collects</td>
+          <td>Intent = <code>deny</code> in post-doctor state → clears <code>doctor_name</code> / <code>appointment_date</code></td>
+        </tr>
+        <tr>
+          <td><strong>No slots available</strong></td>
+          <td>Fast Engine returns <code>None</code> → LLM suggests alternatives</td>
+          <td><code>booking.get_available_slots()</code> returns empty → defers to Ollama</td>
+        </tr>
+        <tr>
+          <td><strong>All LLM providers fail</strong></td>
+          <td>UR: <span class="ur-text" style="font-size:12px;">سوری ... ابھی تکنیکی مسئلہ ہے ... تھوڑی دیر بعد کوشش کریں</span></td>
+          <td>End of fallback chain in <code>_chat_stream</code></td>
+        </tr>
+        <tr>
+          <td><strong>User interrupts Sara</strong></td>
+          <td>Sara stops immediately, processes new input</td>
+          <td>VAD during playback → cancel <code>_turn_task</code> → queue interrupted signal</td>
+        </tr>
+        <tr>
+          <td><strong>Post-booking silence (10s)</strong></td>
+          <td>UR: <span class="ur-text" style="font-size:12px;">اچھا جی، اللہ حافظ،</span> EN: "Alright, take care. Goodbye!"</td>
+          <td><code>_inactivity_monitor()</code> → synthesizes farewell → closes WebSocket</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>

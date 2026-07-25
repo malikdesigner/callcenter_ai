@@ -1,0 +1,622 @@
+<title>Sara AI — Technical Architecture</title>
+<style>
+:root {
+  --bg:        #F6F7FB;
+  --surface:   #FFFFFF;
+  --surface-2: #EEF0F8;
+  --border:    #DDE1EE;
+  --text:      #0F1829;
+  --text-2:    #4A5568;
+  --text-3:    #8896B0;
+  --accent:    #1B4FD8;
+  --accent-t:  #EBF0FF;
+  --ur:        #0B8F5E;
+  --ur-t:      #E6F7F2;
+  --code-bg:   #F0F2F8;
+  --code-text: #1B4FD8;
+  --note-bg:   #FFFBEB;
+  --note-bdr:  #F59E0B;
+  --nav-w:     260px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #0B1120;
+    --surface:   #131C30;
+    --surface-2: #1A2540;
+    --border:    #243050;
+    --text:      #ECF0FB;
+    --text-2:    #8896B0;
+    --text-3:    #4A5A78;
+    --accent:    #6490F8;
+    --accent-t:  #162048;
+    --ur:        #3EC99A;
+    --ur-t:      #062A1A;
+    --code-bg:   #162048;
+    --code-text: #93B4FC;
+    --note-bg:   #1F1500;
+    --note-bdr:  #D97706;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0B1120;--surface:#131C30;--surface-2:#1A2540;--border:#243050;
+  --text:#ECF0FB;--text-2:#8896B0;--text-3:#4A5A78;--accent:#6490F8;
+  --accent-t:#162048;--ur:#3EC99A;--ur-t:#062A1A;--code-bg:#162048;
+  --code-text:#93B4FC;--note-bg:#1F1500;--note-bdr:#D97706;
+}
+:root[data-theme="light"] {
+  --bg:#F6F7FB;--surface:#FFFFFF;--surface-2:#EEF0F8;--border:#DDE1EE;
+  --text:#0F1829;--text-2:#4A5568;--text-3:#8896B0;--accent:#1B4FD8;
+  --accent-t:#EBF0FF;--ur:#0B8F5E;--ur-t:#E6F7F2;--code-bg:#F0F2F8;
+  --code-text:#1B4FD8;--note-bg:#FFFBEB;--note-bdr:#F59E0B;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  font-size:15px;line-height:1.75;
+  color:var(--text);background:var(--bg);
+  display:flex;min-height:100vh;
+}
+
+/* Nav */
+nav{
+  width:var(--nav-w);flex-shrink:0;
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+  border-right:1px solid var(--border);background:var(--surface);
+  padding:28px 0;
+}
+.nav-hd{padding:0 22px 22px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.nav-title{font-family:Georgia,serif;font-size:16px;font-weight:700;color:var(--text)}
+.nav-sub{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-top:3px}
+.nav-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);font-weight:700;padding:14px 22px 4px}
+nav a{
+  display:block;padding:6px 22px;
+  text-decoration:none;font-size:13px;color:var(--text-2);
+  border-left:2px solid transparent;
+  transition:all .12s;
+}
+nav a:hover{color:var(--text);background:var(--surface-2);border-left-color:var(--border)}
+nav a.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-t)}
+
+/* Main */
+main{flex:1;min-width:0;padding:56px 60px;max-width:860px}
+
+/* Page header */
+.ph{margin-bottom:56px;padding-bottom:36px;border-bottom:2px solid var(--border)}
+.ph-eye{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-3);margin-bottom:10px}
+.ph-title{
+  font-family:Georgia,'Times New Roman',serif;
+  font-size:38px;font-weight:700;letter-spacing:-.6px;
+  color:var(--text);line-height:1.15;text-wrap:balance;
+}
+.ph-lead{
+  margin-top:16px;font-size:15.5px;color:var(--text-2);
+  max-width:620px;line-height:1.8;
+}
+.meta-row{display:flex;gap:16px;margin-top:22px;flex-wrap:wrap}
+.meta{font-size:12px;color:var(--text-3)}
+.meta strong{color:var(--text-2)}
+
+/* Sections */
+.sec{margin-bottom:64px;scroll-margin-top:24px}
+h2{
+  font-family:Georgia,'Times New Roman',serif;
+  font-size:24px;font-weight:700;letter-spacing:-.3px;
+  color:var(--text);margin-bottom:6px;text-wrap:balance;
+}
+.sec-num{
+  font-size:11px;font-family:'Consolas','SF Mono',monospace;
+  color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;
+  margin-bottom:8px;
+}
+.sec-rule{height:2px;background:var(--border);margin-bottom:28px;border-radius:1px}
+
+h3{
+  font-size:16.5px;font-weight:700;color:var(--text);
+  margin:32px 0 10px;
+}
+h4{font-size:14px;font-weight:700;color:var(--text-2);margin:22px 0 6px}
+
+p{color:var(--text-2);margin-bottom:16px;max-width:68ch}
+p:last-child{margin-bottom:0}
+
+ul,ol{
+  color:var(--text-2);padding-left:20px;
+  display:flex;flex-direction:column;gap:5px;
+  margin-bottom:16px;max-width:68ch;
+}
+li{line-height:1.65}
+
+/* Code */
+code{
+  font-family:'Consolas','SF Mono','Courier New',monospace;
+  font-size:12.5px;
+  background:var(--code-bg);color:var(--code-text);
+  padding:1px 6px;border-radius:4px;
+}
+pre{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:18px 22px;
+  overflow-x:auto;margin:18px 0;
+  font-family:'Consolas','SF Mono',monospace;
+  font-size:12.5px;color:var(--text-2);line-height:1.6;
+}
+pre code{background:none;padding:0;font-size:inherit;color:inherit}
+
+/* Note box */
+.note{
+  background:var(--note-bg);border-left:3px solid var(--note-bdr);
+  padding:12px 16px;border-radius:0 6px 6px 0;
+  margin:16px 0;font-size:13.5px;color:var(--text-2);
+}
+
+/* Info card */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:18px 22px;margin:16px 0;
+}
+.card h4{margin-top:0}
+
+/* Spec table */
+table{
+  width:100%;border-collapse:collapse;font-size:13.5px;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;overflow:hidden;margin:16px 0;
+}
+th{
+  text-align:left;padding:9px 16px;font-size:11px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);
+  background:var(--surface-2);border-bottom:1px solid var(--border);
+}
+td{padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td strong{color:var(--text);font-weight:600}
+
+/* Divider */
+.div{height:1px;background:var(--border);margin:56px 0}
+
+/* Urdu */
+.ur-eg{
+  direction:rtl;unicode-bidi:embed;
+  font-family:'Noto Nastaliq Urdu','Traditional Arabic','Segoe UI',sans-serif;
+  font-size:15px;line-height:2;color:var(--text);
+}
+
+/* Component badge */
+.badge{
+  display:inline-block;font-size:11px;font-family:'Consolas','SF Mono',monospace;
+  padding:2px 8px;border-radius:4px;font-weight:600;
+  background:var(--surface-2);color:var(--text-2);
+  border:1px solid var(--border);
+}
+</style>
+
+<nav>
+  <div class="nav-hd">
+    <div class="nav-title">Sara AI</div>
+    <div class="nav-sub">Technical Reference</div>
+  </div>
+  <div class="nav-group">Architecture</div>
+  <a href="#overview">1. Overview</a>
+  <a href="#ports">2. Ports &amp; Entry Points</a>
+  <a href="#pipeline">3. Audio Pipeline</a>
+
+  <div class="nav-group">Audio Processing</div>
+  <a href="#vad">4. Voice Activity Detection</a>
+  <a href="#stt">5. Speech-to-Text</a>
+  <a href="#stt-filter">6. STT Quality Filter</a>
+
+  <div class="nav-group">Dialogue</div>
+  <a href="#policy">7. Semantic Validation &amp; Policy</a>
+  <a href="#intent">8. Intent Detection</a>
+  <a href="#fast">9. Fast Dialogue Engine</a>
+  <a href="#agent">10. LLM Agent</a>
+
+  <div class="nav-group">Language &amp; Voice</div>
+  <a href="#llm">11. LLM Fallback Chain</a>
+  <a href="#tts">12. Text-to-Speech</a>
+  <a href="#bilingual">13. Bilingual Mode</a>
+
+  <div class="nav-group">Orchestration</div>
+  <a href="#handler">14. Call Handler</a>
+  <a href="#features">15. Special Features</a>
+  <a href="#booking">16. Booking &amp; Database</a>
+  <a href="#server">17. WebSocket Server</a>
+</nav>
+
+<main>
+
+<div class="ph">
+  <div class="ph-eye">City Medical Hospital · Internal Technical Reference</div>
+  <div class="ph-title">Sara AI<br>Technical Architecture</div>
+  <div class="ph-lead">
+    A complete explanation of how the AI receptionist works — from a caller speaking into their browser microphone to an appointment being written to the database, in every language mode.
+  </div>
+  <div class="meta-row">
+    <span class="meta"><strong>Stack:</strong> Python · FastAPI · Whisper · Edge-TTS · Gemini/Groq/Ollama</span>
+    <span class="meta"><strong>Modes:</strong> English (8000) · Urdu (8001) · Bilingual (8002)</span>
+  </div>
+</div>
+
+<!-- 1. Overview -->
+<div class="sec" id="overview">
+  <div class="sec-num">Section 01</div>
+  <h2>System Overview</h2>
+  <div class="sec-rule"></div>
+
+  <p>Sara AI is a real-time voice receptionist. A caller opens a browser page, clicks "Start Call," speaks naturally, and Sara handles the entire appointment booking conversation — collecting name, phone, symptoms, doctor preference, date, and time — before writing the appointment to a database. There is no IVR menu, no hold music, no typed forms. It works entirely by voice.</p>
+
+  <p>The system runs as three separate FastAPI applications on three ports, all in the same Python process. Models (Whisper, VAD, TTS) are loaded once at startup and shared across all three servers via class-level state on <code>CallHandler</code>. This means the heavy GPU work of loading Whisper happens once regardless of how many language modes are active.</p>
+
+  <p>Every call flows through the same pipeline: the browser captures raw PCM audio and streams it over a WebSocket. On the server side, a Voice Activity Detector (VAD) watches the stream and identifies when the caller is speaking. Once the caller finishes a sentence (detected by a silence gap), the accumulated speech buffer is sent to Whisper for transcription. The text then passes through a quality filter, a semantic validator, a dialogue policy, and arrives at either the Fast Dialogue Engine (for structured inputs like phone numbers) or the LLM Agent (for open-ended turns like describing symptoms). The LLM's response text is streamed sentence-by-sentence to the TTS engine, which synthesizes audio and streams it back to the browser in real time.</p>
+
+  <div class="note">
+    The entire pipeline from end-of-speech to first audio byte typically takes 1.5–3 seconds: ~0.4s for Whisper transcription + ~0.8s for LLM first token + ~0.3s for TTS synthesis. A micro-acknowledgment ("جی..." / "Okay...") is played from cache immediately while the LLM generates, masking the latency.
+  </div>
+</div>
+
+<!-- 2. Ports -->
+<div class="sec" id="ports">
+  <div class="sec-num">Section 02</div>
+  <h2>Ports &amp; Entry Points</h2>
+  <div class="sec-rule"></div>
+
+  <p>The three servers are created by calling <code>create_app(language)</code> with different language strings. The factory function returns a FastAPI application with a root route that serves the appropriate HTML frontend.</p>
+
+  <table>
+    <thead><tr><th>Port</th><th>Mode</th><th>Frontend</th><th>Language behaviour</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>8000</strong></td>
+        <td>English</td>
+        <td><code>index.html</code></td>
+        <td>All STT and TTS in English. LLM uses English system prompt. Gemini skipped; Groq → Ollama chain.</td>
+      </tr>
+      <tr>
+        <td><strong>8001</strong></td>
+        <td>Urdu</td>
+        <td><code>index_ur.html</code></td>
+        <td>Whisper forced to Urdu language detection. TTS uses <code>ur-PK-UzmaNeural</code>. LLM uses Urdu system prompt. Gemini → Groq → Ollama.</td>
+      </tr>
+      <tr>
+        <td><strong>8002</strong></td>
+        <td>Bilingual selector</td>
+        <td><code>index_select.html</code></td>
+        <td>Sara greets bilingually and asks the caller to choose. On detection, switches language in-place on the same WebSocket — no reconnect.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>Each server also exposes REST endpoints for the admin dashboard: <code>/api/appointments</code>, <code>/api/doctors</code>, <code>/api/departments</code>, <code>/api/slots</code>, and <code>/api/knowledge</code>. Uvicorn runs at <code>log_level="warning"</code> to suppress INFO-level startup noise.</p>
+</div>
+
+<!-- 3. Pipeline -->
+<div class="sec" id="pipeline">
+  <div class="sec-num">Section 03</div>
+  <h2>Audio Pipeline</h2>
+  <div class="sec-rule"></div>
+
+  <p>The browser captures microphone audio using the Web Audio API: a <code>MediaStreamSource</code> feeds into a <code>ScriptProcessor</code> node running at 2048 samples per callback. Each callback converts the float32 PCM samples to a <code>Float32Array</code>, serialises them as raw bytes via <code>ArrayBuffer</code>, and sends them over the WebSocket to the server.</p>
+
+  <p>On the server, <code>CallHandler.process_audio_chunk()</code> receives each chunk. It normalises very quiet audio (if peak amplitude &lt; 0.1, it boosts it proportionally) and passes the chunk to the VAD. Simultaneously, the chunk is added to a rolling <code>pre_buffer</code> — a deque of the last 300 ms of audio — which is prepended to the speech buffer when a new utterance begins. This ensures the first syllable of a word is never clipped.</p>
+
+  <p>When speech ends (VAD returns False after VAD returned True), the handler checks whether the silence duration has exceeded <code>_silence_gate</code> — 2.0 seconds for Urdu/Roman Urdu, 1.5 seconds for English. If yes, a turn-processing coroutine is spawned as an <code>asyncio.Task</code>.</p>
+
+  <h3>Barge-in suppression</h3>
+  <p>While Sara is playing audio, her voice echoes into the caller's microphone. Without protection, the VAD would detect Sara's own speech as user input and trigger a spurious turn. To prevent this, the handler tracks an estimate of when Sara's audio will finish playing. Each time audio bytes are added to the outbound queue, <code>_extend_playback_guard()</code> computes the audio's duration (bytes ÷ 16,000 bytes/s for Edge-TTS MP3 at ~128 kbps) and adds a 0.6-second margin. Any VAD positive during that window is silently discarded.</p>
+
+  <h3>Interruption handling</h3>
+  <p>If the caller speaks while Sara is still generating a response (i.e., a turn task is running), the barge-in guard does not apply — the caller genuinely wants to interrupt. When VAD fires and a <code>_turn_task</code> is active, the task is cancelled immediately, an <code>{"type":"interrupt"}</code> JSON signal is sent to the browser (which stops audio playback), and the caller's new speech is processed fresh.</p>
+</div>
+
+<!-- 4. VAD -->
+<div class="sec" id="vad">
+  <div class="sec-num">Section 04</div>
+  <h2>Voice Activity Detection</h2>
+  <div class="sec-rule"></div>
+
+  <p>The VAD uses <strong>Silero VAD</strong>, a small neural network (~1 MB) trained specifically to detect human speech in noisy conditions. It operates on 30 ms frames at 16 kHz and returns a probability that the current frame contains speech. The <code>VADDetector</code> class wraps Silero with a threshold gate — frames above the threshold are considered speech.</p>
+
+  <p>Silero is chosen over simple energy thresholding because it handles background noise reliably: a fan running in the room, street noise, or a quiet voice all produce different energy levels, but Silero classifies them correctly based on learned spectral patterns rather than raw volume.</p>
+
+  <p>The detector maintains state across chunks so it does not reset between 20 ms audio callbacks. When a call ends, <code>vad.reset()</code> clears that state so the next call starts clean.</p>
+</div>
+
+<!-- 5. STT -->
+<div class="sec" id="stt">
+  <div class="sec-num">Section 05</div>
+  <h2>Speech-to-Text</h2>
+  <div class="sec-rule"></div>
+
+  <p>Transcription uses <strong>Whisper large-v3</strong> via <code>faster-whisper</code>, a CTranslate2-based reimplementation that runs significantly faster than OpenAI's original Pytorch version. The model runs on CUDA in <code>int8_float16</code> quantisation — this halves VRAM usage with negligible accuracy loss compared to full float16.</p>
+
+  <p>The transcription runs in a thread pool executor (<code>loop.run_in_executor(None, ...)</code>) so it does not block the asyncio event loop while the GPU is working. This allows the WebSocket to keep receiving audio and the response queue to keep sending audio to the caller even while Whisper is processing.</p>
+
+  <h3>Language handling</h3>
+  <p>In Urdu mode, Whisper is called with <code>language="ur"</code>, which forces its internal beam search to decode in Urdu. This dramatically improves accuracy for Urdu speech compared to auto-detection, which Whisper sometimes confuses with Arabic or Hindi.</p>
+
+  <p>In bilingual mode (port 8002), before the caller has chosen a language, Whisper is called with <code>language=None</code> and <code>return_language=True</code>. This returns both the transcript and Whisper's internal audio-language classification — a value like <code>"ur"</code> or <code>"en"</code> with a probability. This audio-level detection is used as a ground-truth signal because it operates on raw acoustic features, not the transcribed text. It correctly identifies Urdu even when Whisper transcribes it phonetically into Latin characters (e.g., "or do" instead of "اردو").</p>
+
+  <h3>Confidence scoring</h3>
+  <p>Whisper returns a log-probability score for the transcription. This is converted to a linear confidence value and passed to the STT Filter described next. Low confidence typically indicates the caller was too quiet, spoke over background noise, or the speech was too brief to decode reliably.</p>
+
+  <p>In phone mode (<code>phone_mode=True</code>, used for Twilio calls), the audio arrives at 8 kHz and is upsampled to 16 kHz before being passed to Whisper. The flag also adjusts Whisper's beam search parameters for telephone-quality audio.</p>
+</div>
+
+<!-- 6. STT Filter -->
+<div class="sec" id="stt-filter">
+  <div class="sec-num">Section 06</div>
+  <h2>STT Quality Filter</h2>
+  <div class="sec-rule"></div>
+
+  <p>Even a confident Whisper transcription is not always usable. The STT Filter (<code>src/pipeline/stt_filter.py</code>) applies three independent checks before the transcript reaches the dialogue layer:</p>
+
+  <h3>Confidence threshold</h3>
+  <p>The transcription confidence must exceed a minimum value: 0.40 for Urdu (where audio is inherently harder to transcribe due to code-switching and dialect variation) and 0.50 for English. Transcripts below this threshold are rejected and Sara asks the caller to repeat.</p>
+
+  <h3>Length check</h3>
+  <p>Transcripts shorter than a minimum character count are rejected. A single character or two-character "transcript" almost always represents Whisper hallucinating from noise rather than real speech.</p>
+
+  <h3>Gibberish detection</h3>
+  <p>Whisper sometimes generates plausible-looking but meaningless text when confronted with sustained noise — for example, a long sequence of repeated punctuation, or a string of random consonants. The gibberish detector uses heuristics based on character n-gram frequency and known hallucination patterns specific to Whisper to identify these cases.</p>
+
+  <p>When any check fails, Sara plays a retry prompt directly from TTS (bypassing the LLM entirely) and the turn ends. This prevents garbage transcripts from confusing the dialogue state machine.</p>
+</div>
+
+<!-- 7. Policy -->
+<div class="sec" id="policy">
+  <div class="sec-num">Section 07</div>
+  <h2>Semantic Validation &amp; Dialogue Policy</h2>
+  <div class="sec-rule"></div>
+
+  <p>After STT passes quality checks, the transcript goes through two gating layers before reaching the LLM.</p>
+
+  <h3>Semantic validation</h3>
+  <p>The semantic validator (<code>src/dialogue/semantic_validator.py</code>) checks whether the caller's input is meaningful in the context of the current dialogue state. For example, if Sara just asked "What is your name?", and the caller responds with a long sentence containing no name-like words, the validator flags this as semantically invalid and forces the intent to <code>GARBAGE</code>. This prevents the LLM from trying to parse nonsensical inputs and generating confused responses.</p>
+
+  <h3>Dialogue policy</h3>
+  <p>The <code>DialoguePolicy</code> evaluates the detected intent against the current dialogue state and decides whether to proceed normally or trigger a hard fallback. A hard fallback fires when the caller is clearly off-topic or confused in a way that the LLM cannot recover from gracefully. In this case, the policy generates its own fallback response text and plays it directly — the LLM is never called.</p>
+
+  <p>The policy also maintains the canonical dialogue state (<code>ASK_NAME</code>, <code>ASK_PHONE</code>, <code>ASK_SYMPTOM</code>, <code>ASK_DATE</code>, <code>ASK_TIME</code>) and synchronises it with the agent's <code>_collected</code> dictionary via <code>policy.sync_from_collected()</code>. This matters because the Fast Engine can advance the agent's internal state without going through the policy, so the policy must re-derive its state from what has actually been collected rather than relying on its own transition history.</p>
+
+  <p>The policy also produces two outputs used by the LLM: <code>policy_state</code> (the current booking step) and <code>nlg_constraint</code> (instructions for Natural Language Generation — for instance, "ask for the date in a short, clear sentence").</p>
+</div>
+
+<!-- 8. Intent -->
+<div class="sec" id="intent">
+  <div class="sec-num">Section 08</div>
+  <h2>Intent Detection</h2>
+  <div class="sec-rule"></div>
+
+  <p>Intent detection (<code>src/llm/intent.py</code>) is a lightweight rule-based classifier that runs before the LLM to categorise the caller's utterance. It does not use an LLM — it works with keyword matching, pattern heuristics, and character-set detection. This keeps it fast and deterministic.</p>
+
+  <p>The main intents it distinguishes:</p>
+  <ul>
+    <li><strong>provide_name</strong> — short input with a name-like structure</li>
+    <li><strong>provide_phone</strong> — contains digit sequences matching Pakistani mobile formats</li>
+    <li><strong>describe_symptoms</strong> — contains medical vocabulary or body-part words</li>
+    <li><strong>choose_date</strong> — contains date words (day names in Urdu/English, relative words like "kal", "tomorrow")</li>
+    <li><strong>choose_time</strong> — contains time patterns or Urdu time-of-day words (صبح, شام)</li>
+    <li><strong>confirm</strong> — affirmative words (جی, ہاں, yes, okay, bilkul)</li>
+    <li><strong>deny</strong> — negative words (نہیں, no, galat) — triggers correction flow</li>
+    <li><strong>unclear</strong> — nothing matches; LLM handles it</li>
+  </ul>
+
+  <p>For language switching in bilingual mode, <code>detect_language_preference()</code> checks the transcript for the words "english", "urdu", Urdu-script Arabic characters, and phonetic variants. It returns <code>"en"</code>, <code>"ur"</code>, or <code>None</code>. When it returns <code>None</code> but Whisper's audio-level detection returned <code>"ur"</code>, that audio signal is used as the tie-breaker.</p>
+</div>
+
+<!-- 9. Fast Engine -->
+<div class="sec" id="fast">
+  <div class="sec-num">Section 09</div>
+  <h2>Fast Dialogue Engine</h2>
+  <div class="sec-rule"></div>
+
+  <p>The <code>FastDialogueEngine</code> (<code>src/dialogue/fast_engine.py</code>) is a rule-based engine that handles structured booking inputs without any LLM call. It makes responses instantaneous for the most common turns in a booking conversation.</p>
+
+  <p>When the dialogue state is one of <code>collect_name</code>, <code>collect_phone</code>, <code>collect_date</code>, <code>collect_time</code>, or <code>confirm_booking</code>, the Fast Engine's <code>try_handle()</code> method is called first. If it can extract the expected value from the transcript, it returns a complete response dict immediately. If it cannot (the input is ambiguous, the caller seems confused, or the format is unrecognisable), it returns <code>None</code> and the LLM handles the turn.</p>
+
+  <h3>Name extraction</h3>
+  <p>Strips known filler phrases ("میرا نام ہے", "my name is", "I am") from the transcript, then validates what remains: it must be 1–4 words, contain no digit strings, and not match a list of non-name Urdu words (ہاں, جی, etc.) or medical vocabulary. Names that are too long are rejected as sentences.</p>
+
+  <h3>Phone extraction</h3>
+  <p>Uses three regex patterns: a full Pakistani mobile format (0 + 3xx + 7 digits), an 11-digit sequence starting with 03, and a fallback that extracts any 10–11 digit run from the transcript (for when the caller says digits slowly with pauses). This makes the engine robust to all common ways callers dictate phone numbers.</p>
+
+  <h3>Date extraction</h3>
+  <p>Recognises Urdu day names (پیر، منگل، بدھ), English day names, relative terms in both languages ("آج", "کل", "today", "tomorrow", "parso"), and numeric formats like "15/6" or "15 June". Relative terms are resolved to an absolute <code>date</code> object. Unrecognisable date formats defer to the LLM.</p>
+
+  <h3>Time extraction and slot validation</h3>
+  <p>Parses spoken times including Urdu number words (دس بجے → 10:00), meridiem indicators (صبح → AM, شام → PM), and numeric patterns like "10:30". After parsing, it validates the extracted time against available DB slots for the chosen doctor and date. If the exact time is not available but a slot within 30 minutes exists, it snaps to the nearest slot. If no match is found, it defers to the LLM.</p>
+
+  <h3>Confirmation chaining</h3>
+  <p>When the Fast Engine collects the last piece of information (appointment time), the agent's <code>_compute_flow_state()</code> returns <code>confirm_booking</code> — meaning all required fields are now present. Rather than waiting for the caller to speak again, the handler immediately falls through to an LLM call with a neutral trigger ("جی"), which, combined with the <code>ALL_INFO_COLLECTED</code> context hint, causes the LLM to generate the booking summary without requiring another user turn.</p>
+</div>
+
+<!-- 10. Agent -->
+<div class="sec" id="agent">
+  <div class="sec-num">Section 10</div>
+  <h2>LLM Agent (HospitalAgent)</h2>
+  <div class="sec-rule"></div>
+
+  <p>The <code>HospitalAgent</code> class (<code>src/llm/agent.py</code>) is the central intelligence of the system. It maintains the booking state, builds LLM prompts, parses LLM responses, and executes bookings. One instance is created per call session.</p>
+
+  <h3>System prompt</h3>
+  <p>The system prompt is built fresh for each LLM call via <code>_build_system_prompt(lang)</code>. It contains:</p>
+  <ul>
+    <li>Sara's persona and role description</li>
+    <li>Current date, time, and tomorrow's date (so the LLM can resolve relative dates correctly)</li>
+    <li>Complete list of active doctors with their department, specialty, and fee</li>
+    <li>A strict booking flow with numbered steps in the correct language</li>
+    <li>Output rules including language enforcement ("Urdu script only — zero English"), tone guidance, banned formal words (براہ کرم, جناب), and punctuation rules</li>
+    <li>Worked examples showing the expected conversational style</li>
+    <li>Knowledge block: hospital hours, departments, payment methods</li>
+    <li>JSON output format specification</li>
+  </ul>
+
+  <p>For Urdu, the system prompt is written entirely in Urdu. This is intentional — giving an Urdu model an English system prompt and asking it to respond in Urdu produces code-switching. An Urdu system prompt produces pure Urdu output.</p>
+
+  <h3>Context injection</h3>
+  <p><code>_build_context_injection()</code> adds live information to the system prompt at call time:</p>
+  <ul>
+    <li>The current state of <code>_collected</code> (what has been gathered so far)</li>
+    <li>Available DB slots for the chosen doctor and date range</li>
+    <li>The <code>ALL_INFO_COLLECTED</code> hint when all required fields are present, instructing the LLM to generate a booking summary</li>
+    <li>An instruction to exclude fee and WhatsApp details from the summary (since those are added by hardcoded code, not the LLM)</li>
+  </ul>
+
+  <h3>Streaming response parsing</h3>
+  <p><code>process_turn_stream()</code> is an async generator. It streams the LLM response token-by-token and uses a regex to detect sentence boundaries in the <code>"speech"</code> field of the JSON as it arrives. Completed sentences are yielded immediately for TTS synthesis, so the caller starts hearing Sara's voice before the LLM has finished generating the full response. This is how the system achieves low perceived latency even with large LLM responses.</p>
+
+  <h3>Data collection</h3>
+  <p>The LLM returns a JSON object on every turn:
+  <code>{"speech":"...","action":"ask|confirm|save|end","data":{"patient_name":"...","patient_phone":"...",...}}</code>.
+  After each turn, the <code>data</code> field is merged into <code>self._collected</code>. Placeholder values (<code>""</code>, <code>"N/A"</code>, <code>"unknown"</code>) are discarded. A normalisation step cleans phone numbers, resolves relative dates to ISO format, and validates doctor names against the DB.</p>
+
+  <h3>State machine</h3>
+  <p><code>_compute_flow_state()</code> derives the current booking step purely from what is missing in <code>_collected</code>. It does not maintain a separate transition history — it always recomputes from the actual data. This makes the system self-correcting: if the LLM hallucinates a value that later gets cleared (e.g., user says "wrong doctor"), the state machine automatically steps back to re-collect that field.</p>
+
+  <h3>Doctor name auto-extraction</h3>
+  <p>If the LLM mentions a doctor name in its speech but forgets to include it in the <code>data</code> field (a common LLM omission), <code>_try_extract_doctor_from_speech()</code> scans the speech text for known doctor names and populates <code>collected["doctor_name"]</code> automatically.</p>
+</div>
+
+<!-- 11. LLM Chain -->
+<div class="sec" id="llm">
+  <div class="sec-num">Section 11</div>
+  <h2>LLM Fallback Chain</h2>
+  <div class="sec-rule"></div>
+
+  <p>All LLM calls go through <code>_chat_stream()</code>, which tries providers in order and falls through if any fail.</p>
+
+  <h3>Gemini (Urdu / Roman Urdu primary)</h3>
+  <p>Google Gemini (gemini-3.5-flash) is the primary model for Urdu because it produces natural, idiomatic Pakistani Urdu better than smaller models. Up to six API keys are configured, each used in rotation. A set of <em>exhausted</em> keys is maintained in process memory — keys that have hit their daily quota are skipped for the rest of the day without being retried. Each Gemini request has a 12-second timeout via <code>asyncio.wait_for</code>; if the key does not respond within that window, the next key is tried immediately. This prevents the 30–60 second hangs that occur during Gemini 503 overload events.</p>
+
+  <h3>Groq (universal fast fallback)</h3>
+  <p>When all Gemini keys fail, time out, or return 503s, Groq is tried next. Groq runs <code>llama-3.1-8b-instant</code> on their inference hardware and typically responds in 1–2 seconds. It handles both Urdu and English. A 10-second timeout is applied. Because Groq's model is smaller than Gemini's, its Urdu output may be slightly less idiomatic, but it is vastly better than waiting two minutes for an overloaded Gemini key.</p>
+
+  <h3>Ollama (local final fallback)</h3>
+  <p>Ollama is the last resort — a locally running LLM server. For English, Ollama is the primary (Gemini is skipped entirely for English). The configured model is tried first; if VRAM is exhausted, Ollama is retried with <code>num_gpu=0</code> to run on CPU. Ollama has no timeout since a local call should always eventually return, though it may be slow on CPU.</p>
+
+  <div class="note">
+    The max token limit for Groq calls is 600 (vs 1200 for Gemini) because Groq's context window pricing makes shorter responses more economical, and Sara's responses should be brief conversational phrases anyway.
+  </div>
+</div>
+
+<!-- 12. TTS -->
+<div class="sec" id="tts">
+  <div class="sec-num">Section 12</div>
+  <h2>Text-to-Speech</h2>
+  <div class="sec-rule"></div>
+
+  <p>The <code>VoiceSynthesizer</code> (<code>src/tts/synthesizer.py</code>) uses Microsoft Edge-TTS as its primary synthesis engine. Edge-TTS is a free neural TTS service accessible via a WebSocket API without an API key. It produces high-quality voices for both English and Urdu.</p>
+
+  <p>For English, <code>en-US-AriaNeural</code> is used. For Urdu, <code>ur-PK-UzmaNeural</code> — a Pakistani Urdu female voice that matches the expected accent for a hospital in Pakistan.</p>
+
+  <h3>Streaming synthesis</h3>
+  <p>TTS synthesis is streaming by design. The LLM agent yields text sentence-by-sentence; the call handler synthesizes each sentence as it arrives and immediately puts the audio bytes in the response queue. The browser starts playing the first sentence while the LLM is still generating the second. This pipeline parallelism is why callers hear Sara's response within a second of speaking even for multi-sentence responses.</p>
+
+  <h3>Tone variants</h3>
+  <p>Edge-TTS supports SSML-based speaking styles. The synthesizer maps an internal <code>policy_tone</code> parameter (values: <code>empathetic</code>, <code>question</code>, <code>confirm</code>, <code>micro</code>) to different SSML styles. <code>empathetic</code> is used when Sara is responding to described symptoms; <code>question</code> is applied to turns that end with a question.</p>
+
+  <h3>Persistent audio cache</h3>
+  <p>Synthesized audio is cached on disk with an MD5 hash of the text+voice+tone as the key, stored in <code>data/tts_cache/</code>. On a cache hit, the audio is returned from disk with zero network latency. Greeting audio is cached separately in <code>data/cache/</code> by the greeting text hash and reused across calls. Bilingual greetings are excluded from the greeting cache because they use mixed voice switching per sentence.</p>
+
+  <h3>Micro-acknowledgment cache</h3>
+  <p>Short filler words ("جی...", "اچھا...", "Okay...", "Mhm...") are pre-synthesized on first use and kept in memory (<code>CallHandler._ack_cache</code>). Each turn, one is randomly selected and played immediately, before the LLM responds. This gives callers the impression that Sara is already listening and thinking, reducing perceived silence.</p>
+
+  <h3>F5-TTS (optional)</h3>
+  <p>If <code>f5-tts</code> is installed, the English voice can be replaced with a voice cloned from a reference recording in <code>voices/receptionist.wav</code>. This would give Sara a custom voice identity. Currently the package is not installed and the system falls back to Edge-TTS for English.</p>
+</div>
+
+<!-- 13. Bilingual -->
+<div class="sec" id="bilingual">
+  <div class="sec-num">Section 13</div>
+  <h2>Bilingual Mode</h2>
+  <div class="sec-rule"></div>
+
+  <p>When a caller connects on port 8002, a <code>HospitalAgent</code> is created with <code>language="bi"</code>. The agent initialises with <code>_bilingual_mode=True</code>, <code>_language_chosen=False</code>, and <code>language="en"</code> (English is the base language for bilingual mode since the greeting is partly English).</p>
+
+  <p>Sara's bilingual greeting is rendered differently: sentences containing mostly Urdu characters are synthesized with <code>ur-PK-UzmaNeural</code>, and sentences without are synthesized with <code>en-US-AriaNeural</code>. This gives the greeting a natural code-switched sound rather than one voice trying to pronounce both scripts.</p>
+
+  <p>On the caller's first response, <code>process_turn_stream()</code> enters the bilingual-selection branch. Whisper is called with <code>language=None</code> to auto-detect. The transcript is analysed by <code>detect_language_preference()</code>. If the text alone is ambiguous (e.g., Whisper transcribed Urdu speech as "or do"), the Whisper audio-language value overrides the text result.</p>
+
+  <p>Once language is determined, the agent sets <code>self.language</code>, <code>self._language_chosen = True</code>, and <code>self._bilingual_mode = False</code>. It yields a short acknowledgment ("جی ضرور!" or "Sure!") and a final dict with <code>action="switch_language"</code>.</p>
+
+  <p>The call handler receives this action and performs five updates in-place: sets <code>self.agent.language</code>, sets <code>self.agent._fast_engine.language</code> (critical — the Fast Engine has its own language copy for response template selection), updates <code>self.language</code>, updates the TTS voice, and adjusts the silence gate. It then calls <code>agent.get_greeting()</code> to generate a proper greeting in the chosen language, synthesizes it, and queues it. From that point, the call proceeds exactly as if the caller had connected to port 8000 or 8001 directly — no disconnect, no reconnect, same WebSocket.</p>
+
+  <div class="note">
+    The <code>_fast_engine.language</code> update is the most critical piece. Before this fix was added, the Fast Engine still had <code>language="en"</code> after a bilingual switch, causing it to return English responses like "Thank you. What's the reason for your visit?" in what was supposed to be a Urdu call.
+  </div>
+</div>
+
+<!-- 14. Handler -->
+<div class="sec" id="handler">
+  <div class="sec-num">Section 14</div>
+  <h2>Call Handler Orchestration</h2>
+  <div class="sec-rule"></div>
+
+  <p>The <code>CallHandler</code> class (<code>src/pipeline/call_handler.py</code>) is the central orchestrator for a single call session. It owns the audio pipeline, the response queue, and all the per-call state.</p>
+
+  <h3>Response queue</h3>
+  <p>The handler uses an <code>asyncio.Queue</code> as the outbound channel. Items on the queue are either <code>("audio", bytes)</code> tuples (raw MP3 audio to send to the browser) or <code>("json", dict)</code> tuples (control messages like transcript notifications, processing indicators, and action signals). A <code>None</code> sentinel ends the stream.</p>
+
+  <p>The <code>consume_responses()</code> generator drains the queue using <code>while True</code> (not <code>while self._is_active</code>). This is important: when <code>_is_active</code> is set to <code>False</code> by an action (like the call ending), items already on the queue must still be delivered. If the loop exited on the <code>_is_active</code> flag, redirect messages or final audio could be silently dropped before reaching the browser.</p>
+
+  <h3>Turn processing</h3>
+  <p><code>_process_turn()</code> is the main per-turn coroutine. It runs the full pipeline — STT, filter, semantic validation, policy evaluation, micro-ack, LLM/Fast Engine, TTS — and enqueues results. It is protected by a <code>_processing</code> flag to prevent two turns from running concurrently. An asyncio Task wraps each call, enabling cancellation on barge-in.</p>
+
+  <h3>Confirm reminder injection</h3>
+  <p>When the LLM agent returns <code>action="confirm"</code>, the handler calls <code>_play_confirm_reminder()</code> immediately after the LLM's summary audio. This method fetches the doctor's fee from the database, constructs a hardcoded line in the correct language stating the fee, WhatsApp payment instruction, and a "shall I confirm?" question, synthesizes it, and queues the audio. The LLM never knows about the fee or WhatsApp — this information is always injected by the handler. This prevents the LLM from hallucinating fee amounts or omitting the WhatsApp instruction.</p>
+</div>
+
+<!-- 15. Features -->
+<div class="sec" id="features">
+  <div class="sec-num">Section 15</div>
+  <h2>Special Features</h2>
+  <div class="sec-rule"></div>
+
+  <h3>Inactivity monitor</h3>
+  <p>After a booking is completed (<code>flow_state = "post_booking"</code>), Sara asks if there is anything else she can help with. If the caller goes silent, the call would hang indefinitely without intervention. The <code>_inactivity_monitor()</code> coroutine runs as a background <code>asyncio.Task</code> throughout the call. It wakes every second, checks whether the flow state is <code>post_booking</code> and whether the time since <code>_last_activity_ts</code> exceeds 10 seconds. If both are true, it synthesizes a farewell, queues the audio, and closes the call. <code>_last_activity_ts</code> is reset any time the user speaks or Sara finishes a response turn, so the timeout only fires when there has been genuine silence since the last exchange.</p>
+
+  <h3>Pre-speech buffer</h3>
+  <p>The rolling pre-buffer stores the last 300 ms of audio at all times, regardless of whether the VAD is detecting speech. When a new utterance begins (VAD transitions from False to True), the pre-buffer contents are prepended to the speech buffer. Without this, the first 100–200 ms of a word — its onset — is lost because the VAD needs a few frames to confidently classify the signal as speech. The pre-buffer ensures Whisper receives the complete utterance including the onset consonant.</p>
+
+  <h3>History management</h3>
+  <p>The agent's conversation history is capped at 16 messages (8 turns). Older messages are truncated. This balances context (the LLM needs to remember what was discussed earlier in the call) against token cost and the risk of the LLM becoming confused by very long contexts in which the booking details changed multiple times via corrections.</p>
+
+  <h3>Knowledge base hot-reload</h3>
+  <p>Hospital information (timings, departments, policies, payment details) is stored in <code>data/hospital_knowledge.json</code>. When the admin dashboard updates this file via <code>PATCH /api/knowledge</code>, the handler invalidates the in-memory cache (<code>_hospital_knowledge = None</code>) so the next LLM call picks up the new values without restarting the server.</p>
+</div>
+
+<!-- 16. Booking -->
+<div class="sec" id="booking">
+  <div class="sec-num">Section 16</div>
+  <h2>Booking &amp; Database</h2>
+  <div class="sec-rule"></div>
+
+  <p>The database uses SQLite via SQLModel (a Pydantic + SQLAlchemy wrapper). Tables: <code>Appointment</code>, <code>Doctor</code>, <code>Department</code>, <code>DoctorSlot</code>. The database file lives at <code>data/appointments.db</code>.</p>
+
+  <p>Slot availability is computed from <code>DoctorSlot</code> records (which define a doctor's weekly available hours) minus <code>Appointment</code> records that are already confirmed for that doctor and date. The <code>BookingSystem.get_available_slots()</code> method returns time strings like <code>"09:00 AM"</code> for the next 5 days.</p>
+
+  <p>When the LLM returns <code>action="save"</code> (or the Fast Engine returns <code>action="save"</code> for an affirmative confirmation), <code>_execute_booking()</code> writes the appointment to the database and returns a speech response that includes the booking ID. The LLM is not involved in the write — it only decides when all required information is present and confirmed.</p>
+
+  <p>After booking, the system tells the caller they will receive a WhatsApp message and should send a screenshot of the fee payment. This WhatsApp message is sent manually by the hospital admin, not automatically. Sara only informs the caller it is coming.</p>
+</div>
+
+<!-- 17. Server -->
+<div class="sec" id="server">
+  <div class="sec-num">Section 17</div>
+  <h2>WebSocket Server</h2>
+  <div class="sec-rule"></div>
+
+  <p>Each call session opens a WebSocket connection to <code>/ws/call/{session_id}</code>. The server runs two concurrent loops per connection via <code>asyncio.gather(receive_loop(), send_loop())</code>.</p>
+
+  <p><strong>receive_loop</strong> reads incoming WebSocket frames. Binary frames are audio chunks passed to <code>handler.process_audio_chunk()</code>. Text frames are JSON control messages; an <code>end_call</code> message from the browser terminates the loop. The loop exits when the handler becomes inactive (<code>while handler.is_active</code>) — which happens when the caller disconnects, says goodbye, or the inactivity monitor fires.</p>
+
+  <p><strong>send_loop</strong> drains <code>handler.consume_responses()</code>. Binary items are sent as WebSocket binary frames (raw audio). JSON items are sent as text frames. The browser receives these frames and either plays the audio or updates the UI (transcript display, status indicator, etc.).</p>
+
+  <p>After both loops exit, the server sends a final <code>{"type":"call_ended"}</code> message and the WebSocket connection closes. A <code>finally</code> block always calls <code>handler.end_call()</code> to cancel background tasks, save the call log, and release the session from the active-calls registry regardless of how the call ended.</p>
+
+  <p>Call logs are saved to <code>data/call_logs/{date}_{session_id}.json</code> on every call end. They contain the full transcript, the collected booking fields, and the final flow state — useful for debugging why a call did not complete a booking.</p>
+</div>
+
+</main>
